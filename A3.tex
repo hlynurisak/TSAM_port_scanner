@@ -1,0 +1,174 @@
+\documentclass[9pt, addpoints]{exam}
+\usepackage[english]{babel}
+\usepackage[utf8x]{inputenc}
+\usepackage{graphicx,lastpage}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{scrextend}
+\usepackage{mathrsfs}
+\usepackage{hhline}
+\usepackage{booktabs} % book-quality tables
+\usepackage{units}    % non-stacked fractions and better unit spacing
+\usepackage{multicol} % multiple column layout facilities
+\usepackage{lipsum}   % filler text
+\usepackage{varwidth} % centering for itemize
+\usepackage{listings}
+\usepackage[linewidth=1pt]{mdframed}
+
+\renewcommand{\qedsymbol}{$\blacksquare$}
+
+\qformat{\thequestion\dotfill \emph{\totalpoints\ points}}
+\pagestyle{headandfoot}
+\header{T-409-TSAM}{Assignment 3 :: Port Forward, Starboard Back}{\thepage/\numpages}
+\runningheadrule
+\firstpagefooter{}{}{}
+\runningfooter{}{Page \thepage\ of \numpages}{}
+
+\graphicspath{{../}{Figures/}}
+\title{Assignment 3}
+
+\begin{document}
+\noindent
+\begin{minipage}[l]{.11\textwidth}%
+\noindent
+   \includegraphics[width=\textwidth]{RU.png}
+\end{minipage}%
+%\hfill
+\begin{minipage}[r]{.6\textwidth}%
+\begin{center}
+    {\large\bfseries Department of Computer Science \par
+    \large Computer Networks \\[2pt]
+    \large Due: Thursday 26th Sept (23.59)
+    }
+\end{center}
+\end{minipage}%
+\fbox{\begin{minipage}[l]{.4\textwidth}%
+\noindent
+    {\bfseries Your name:}\\[2pt]
+TA Name:    \\
+{\footnotesize Estimated Time: {20 hours}}
+\end{minipage}}%
+
+\large     
+\vspace{2cm}
+\begin{center}
+    \begin{minipage}{40em}
+        \begin{center}
+          This is pair assignment, you may work either on your own
+          or with a partner of your choice. 
+        \end{center}
+         
+        \vspace{6pt}
+        
+          This assignment should be completed using C++ 11, the hand-in format is up to you as long as the program compiles with the make command from the source folder.
+          
+        \vspace{6pt}
+        
+    For those who like to dabble in the dark arts, the latex version 
+    is also available.  Please use tar to bundle your source code and program submission. Zip files renamed as tar files will result in an automatic 0. Please include your group name in the submission file name. Do \textbf{NOT} include any hidden files (.git, .DS\_Store .vscode) files in your submission.
+All code used to complete the assignment should be submitted, with a README file explaining how to compile and run your program(s).
+    
+        \vspace{6pt}
+    This assignment requires that you use your laptop to create
+    a port scanning/knocking program that interacts with a server
+    on 130.208.246.249. 
+
+        %~ \vspace{6pt}
+    %~ Marks are awarded for question difficulty. While there is 
+    %~ typically a relationship between difficulty and length of answer,
+    %~ it may not be a strong one. Always justify your answer if necessary,
+    %~ especially with somewhat open ended design questions.
+
+    \par
+    \vspace{12pt}
+    \end{minipage}
+\end{center}
+
+\vspace{4cm}
+\begin{center}
+    \gradetable[h]
+\end{center}
+\newpage
+%
+%
+
+
+%%% Question 1
+\section*{Speak easy to the port, and perhaps it will let you in.}
+In this assignment you will be introduced to the delights of packet
+crafting, bit twiddling and UDP subterfuge.
+
+Somewhere on the TSAM server (130.208.246.249), a server is listening to some ports in the range 4000-4100. Find the ports, send them
+the right packets, and use the secret knock to gain access to the secret information!
+
+% All code used to complete the assignment should be submitted, with a README file explaining how to compile and run your program(s).
+\begin{center}
+    
+\textcolor{red}{During the first week the ports are less likely to drop packets.}
+\end{center}
+
+\begin{questions}
+
+    %% change to name???
+    \question[40]
+    \label{portscanner}
+         Write a UDP port scanner, that takes in as arguments the IP address
+         of the machine, and a range of ports to scan between. The scanner
+            should be run with the command:
+    
+         \begin{lstlisting}
+            ./scanner <IP address> <low port> <high port>
+         \end{lstlisting}
+    
+         Use it to scan between ports 4000-4100 on 130.208.246.249 and print out
+         the open ports that you find in this range.
+         
+         This requires to send some UDP datagram to each of the ports and wait some limited time for a response. 
+    
+         Do not rely on the ports always being the same. Also, note that UDP is an unreliable protocol. Some packets may be dropped randomly.
+         
+    \par    
+    \question[30]
+        \label{puzzleports}
+        You should have discovered 4 open ports in part \ref{portscanner}.
+        The ports you discovered are puzzle ports, safeguarding information about two additional ports which are not showing up on your scan.
+        Your task is to write \emph{\textbf{a separate program}} to solve the puzzle ports, in order to reveal the two hidden ports and the secret phrase.
+        Each port will send you instructions on how to reveal its secret port if you send it a UDP message.
+        
+        The program should be run with the command:
+         \begin{lstlisting}
+./puzzlesolver <IP address> <port1> <port2> <port3> <port4>
+         \end{lstlisting}
+        
+       The program should interact with the ports discovered in part \ref{portscanner} by sending them a UDP message following the instructions provided by the puzzle port. 
+       
+       The puzzle ports will change over time, so do not hard code the ports, but rather supply them as command line arguments to your program.
+    %   a UDP message, and use their replies to discover 2 hidden ports,  one secret phrase, and determine which port is the oracle.
+        
+    \question[20]
+        \label{portknocking}
+        When the oracle receives a comma-separated message containing the hidden ports
+       it will reply with a message telling you the order and no. 
+       of knocks to use. For the final part of this assignment,
+       you should modify your program from part \ref{puzzleports} to knock on the hidden ports in the correct order, and print out the message from the final hidden port.
+       
+       Each knock must contain the message "knock", except for the last knock, which should contain the secret phrase from part \ref{puzzleports}.
+    
+    \question
+       Points will be awarded for code quality, commenting and submission as follows:
+    \begin{parts}
+          \part[3] Code compiles using the supplied Makefile
+          \part[2] Code follows command line invocations described above.
+          \part[5] Code is well commented, and modular
+    \end{parts}
+    
+     
+     \question[10]
+     For 10 bonus points. After completing the port-knocking, you were sent a secret message, follow the instructions in the secret message for 10 bonus points.
+     
+\end{questions}
+
+\end{document}
