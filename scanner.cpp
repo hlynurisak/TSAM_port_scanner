@@ -13,7 +13,15 @@
 
 using namespace std;
 
-bool check_port(const char *ip_string, int port);
+// Struct to hold the response from a port for easier handling
+struct port_response {
+    int port;
+    bool open;
+    char *response;
+};
+
+port_response get_port_response(const char *ip_string, int port);
+
 
 int main(int argc, char *argv[]) {
 
@@ -36,20 +44,29 @@ int main(int argc, char *argv[]) {
 
     // Check ports in the provided range
     for (int port = low_port; port <= high_port; port++) {
-        if (check_port(ip_string, port)) {
-            cout << ip_string << " / " << port << " OPEN" << endl;
+        port_response response = get_port_response(ip_string, port);
+        if (response.open) {
+            cout << ip_string << ":" << port << " OPEN" << endl;
+            if (response.response != nullptr) {
+                cout << response.response << endl;
+            }
         }
     }
 
     return 0;
 }
 
-bool check_port(const char *ip_string, int port) {
+port_response get_port_response(const char *ip_string, int port) {
+    port_response response;
+    response.port = port;
+    response.open = false;
+    response.response = nullptr;
+
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
         cerr << "Error creating socket" << endl;
-        return false;
+        return response;
     }
 
     // Set socket timeout using setsockopt
@@ -59,7 +76,7 @@ bool check_port(const char *ip_string, int port) {
     if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
         cerr << "Error setting socket timeout" << endl;
         close(sock);
-        return false;
+        return response;
     }
 
     // Server address setup
@@ -70,7 +87,7 @@ bool check_port(const char *ip_string, int port) {
     if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) { // Convert IP address string to binary
         cerr << "Invalid IP address" << endl;
         close(sock);
-        return false;
+        return response;
     }
 
     // Send a test datagram
@@ -80,7 +97,7 @@ bool check_port(const char *ip_string, int port) {
     if (sent_bytes < 0) {
         // Handle sendto error
         close(sock);
-        return false;
+        return response;
     }
 
     // Try to receive a response
@@ -93,10 +110,17 @@ bool check_port(const char *ip_string, int port) {
 
     if (recv_bytes > 0) {
         // If there's a response then the port is open
-        return true;
+        if (recv_bytes < BUFFER_SIZE) {
+            buffer[recv_bytes] = '\0';      // Null-terminate the received data
+        } else {
+            buffer[BUFFER_SIZE - 1] = '\0'; // Null-terminate the received data
+        }
+        response.open = true;
+        response.response = strdup(buffer);
+        return response;
     } else {
         // If an error or nothing is received or the operation times out 
         // then assume port is closed
-        return false;
+        return response;
     }
 }
