@@ -1,0 +1,31 @@
+130.208.246.249:4012 OPEN
+The dark side of network programming is a pathway to many abilities some consider to be...unnatural. I am an evil port, I will only communicate with evil processes! (https://en.wikipedia.org/wiki/Evil_bit)
+Send us a message of 4 bytes containing the signature that you created with S.E.C.R.E.T
+
+
+130.208.246.249:4024 OPEN
+Greetings! I am E.X.P.S.T.N, which stands for "Enhanced X-link Port Storage Transaction Node".
+
+What can I do for you? 
+- If you provide me with a list of secret ports (comma-separated), I can guide you on the exact sequence of "knocks" to ensure you score full marks.
+
+How to use E.X.P.S.T.N?
+1. Each "knock" must be paired with both a secret phrase and your unique S.E.C.R.E.T signature.
+2. The correct format to send a knock: First, 4 bytes containing your S.E.C.R.E.T signature, followed by the secret phrase.
+
+Tip: To discover the secret ports and their associated phrases, start by solving challenges on the ports detected using your port scanner. Happy hunting!
+
+
+
+
+130.208.246.249:4041 OPEN
+Greetings from S.E.C.R.E.T (Secure Encryption Certification Relay with Enhanced Trust)! Here's how to access the secret port I'm safeguarding:
+1. Send me your group number as a single unsigned byte.
+2. I'll reply with a 4-byte challenge (in network byte order) unique to your group.
+3. Sign this challenge using the XOR operation with your group's secret (get that from your TA).
+4. Reply with a 5-byte message: the first byte is your group number, followed by the 4-byte signed challenge (in network byte order).
+5. If your signature is correct, I'll grant you access to the port. Good luck!
+
+
+130.208.246.249:4083 OPEN
+Send me a 4-byte message containing the signature you got from S.E.C.R.E.T in the first 4 bytes (in network byte order).
