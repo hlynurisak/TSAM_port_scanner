@@ -142,6 +142,8 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
 
 
 void signature_solver(const char *ip_string, size_t port, uint32_t signature) {
+    // TODO REMOVE THIS SKITAMIX
+    port = 4083;
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
