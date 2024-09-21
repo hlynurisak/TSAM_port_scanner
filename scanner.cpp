@@ -52,7 +52,7 @@ bool check_port(const char *ip_string, int port) {
         return false;
     }
 
-    // Set socket timeout
+    // Set socket timeout using setsockopt
     struct timeval timeout;
     timeout.tv_sec = 1;  // 1-second timeout
     timeout.tv_usec = 0;
@@ -74,7 +74,7 @@ bool check_port(const char *ip_string, int port) {
     }
 
     // Send a test datagram
-    const char *message = "Port scan test";
+    const char *message = "TSAM is the best!";
     ssize_t sent_bytes = sendto(sock, message, strlen(message), 0,
                                 (struct sockaddr *)&server_address, sizeof(server_address));
     if (sent_bytes < 0) {
