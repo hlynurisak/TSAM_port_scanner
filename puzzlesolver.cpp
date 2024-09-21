@@ -13,7 +13,7 @@
 
 using namespace std;
 
-void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint64_t group_secret);
+void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret);
 
 int main(int argc, char *argv[]) {
 
@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
 
 }
 
-void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint64_t group_secret) {
+void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret) {
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
@@ -56,7 +56,7 @@ void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, 
 
     // Set socket timeout using setsockopt
     struct timeval timeout;
-    timeout.tv_sec = 2;  // 1-second timeout
+    timeout.tv_sec = 1;  // 2-second timeout
     timeout.tv_usec = 0; // Clear the microseconds part
     if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
         cerr << "Error setting socket timeout" << endl;
@@ -65,11 +65,11 @@ void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, 
     }
 
     // Server address setup
-    struct sockaddr_in server_address;                                  // Initialize server address structure
-    memset(&server_address, 0, sizeof(server_address));                 // Clear the structure
+    struct sockaddr_in server_address;
+    memset(&server_address, 0, sizeof(server_address));
     server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(secret_port);                       // htons to convert to network byte order
-    if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) { // Convert IP address string to binary
+    server_address.sin_port = htons(secret_port);
+    if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
         cerr << "Invalid IP address" << endl;
         close(sock);
         return;
@@ -80,48 +80,40 @@ void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, 
     ssize_t sent_bytes = sendto(sock, &message, sizeof(message), 0,
                                 (struct sockaddr *)&server_address, sizeof(server_address));
     if (sent_bytes < 0) {
-        // Handle sendto error
         cerr << "Error sending message" << endl;
         close(sock);
         return;
     }
 
-    // 2. Recieve challenge from server
-    uint64_t group_challenge;
+    // 2. Receive challenge from server
+    uint32_t group_challenge;
     socklen_t addr_len = sizeof(server_address);
-    ssize_t recv_bytes = recvfrom(sock, &group_challenge, BUFFER_SIZE, 0,
+    ssize_t recv_bytes = recvfrom(sock, &group_challenge, sizeof(group_challenge), 0,
                                   (struct sockaddr *)&server_address, &addr_len);
 
-
-    if (recv_bytes > 0) {
+    if (recv_bytes == sizeof(group_challenge)) {
         // Convert the received challenge to host byte order
         group_challenge = ntohl(group_challenge);
-        cout << "The group challenge is: " << hex << group_challenge << endl;
-    }
-    else {
-        // Handle recvfrom error
+        cout << "The group challenge is: 0x" << hex << group_challenge << endl;
+    } else {
         cerr << "Error receiving message" << endl;
-        close(sock);  // Close the socket after use
+        close(sock);
         return;
     }
 
     // 3. Sign challenge with XOR
-    uint64_t group_response = group_challenge ^ group_secret;
+    uint32_t group_response = group_challenge ^ group_secret;
     group_response = htonl(group_response);  // Convert to network byte order
 
     // 4. Create and send response with group number and signed challenge
-    // Create empty 5 byte buffer
     uint8_t response[5];
-    // Group number in first byte
     response[0] = groupnum;
-    // Copy response (4 bytes) to buffer
     memcpy(&response[1], &group_response, sizeof(group_response));
 
     // Send response to server
     sent_bytes = sendto(sock, response, sizeof(response), 0,
                         (struct sockaddr *)&server_address, sizeof(server_address));
     if (sent_bytes < 0) {
-        // Handle sendto error
         cerr << "Error sending message" << endl;
         close(sock);
         return;
@@ -132,8 +124,12 @@ void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, 
     recv_bytes = recvfrom(sock, buffer, BUFFER_SIZE, 0,
                           (struct sockaddr *)&server_address, &addr_len);
     if (recv_bytes > 0) {
-        cout << buffer << endl;
+        buffer[recv_bytes] = '\0';  // Null-terminate the received string
+        cout << "Received: " << buffer << endl;
+    } else {
+        cerr << "Error receiving message" << endl;
     }
+
     close(sock);  // Close the socket after use
     return;
 }
