@@ -47,6 +47,8 @@ int main(int argc, char *argv[]) {
 }
 
 void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret) {
+    // TODO: Retry receiving if packet is lost
+    
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
