@@ -55,7 +55,7 @@ bool check_port(const char *ip_string, int port) {
     // Set socket timeout using setsockopt
     struct timeval timeout;
     timeout.tv_sec = 1;  // 1-second timeout
-    timeout.tv_usec = 0;
+    timeout.tv_usec = 0; // Clear the microseconds part
     if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
         cerr << "Error setting socket timeout" << endl;
         close(sock);
@@ -63,11 +63,11 @@ bool check_port(const char *ip_string, int port) {
     }
 
     // Server address setup
-    struct sockaddr_in server_address;
-    memset(&server_address, 0, sizeof(server_address));
-    server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(port);
-    if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
+    struct sockaddr_in server_address;                                  // Initialize server address structure
+    memset(&server_address, 0, sizeof(server_address));                 // Clear the structure
+    server_address.sin_family = AF_INET;                                // Set address family to AF_INET
+    server_address.sin_port = htons(port);                              // Set port; use htons to convert to network byte order
+    if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) { // Convert IP address string to binary
         cerr << "Invalid IP address" << endl;
         close(sock);
         return false;
@@ -92,13 +92,11 @@ bool check_port(const char *ip_string, int port) {
     close(sock);  // Close the socket after use
 
     if (recv_bytes > 0) {
-        // Received a response; port is open
+        // If there's a response then the port is open
         return true;
-    } else if (recv_bytes == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-        // Timeout occurred; assume port is closed or filtered
-        return false;
     } else {
-        // Other errors
+        // If an error or nothing is received or the operation times out 
+        // then assume port is closed
         return false;
     }
 }
