@@ -31,5 +31,9 @@
 *.out
 *.app
 
+# Custom
 .vscode
 .DS_store
+puzzlesolver
+scanner
+puzzlesolverVici.cpp
