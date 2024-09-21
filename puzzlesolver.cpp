@@ -14,6 +14,7 @@
 using namespace std;
 
 void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret);
+uint32_t get_signature(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret);
 
 int main(int argc, char *argv[]) {
 
@@ -47,8 +48,6 @@ int main(int argc, char *argv[]) {
 }
 
 void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret) {
-    // TODO: Retry receiving if packet is lost
-    
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
@@ -104,13 +103,13 @@ void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, 
     }
 
     // 3. Sign challenge with XOR
-    uint32_t group_response = group_challenge ^ group_secret;
-    group_response = htonl(group_response);  // Convert to network byte order
+    uint32_t group_signature = group_challenge ^ group_secret;
+    group_signature = htonl(group_signature);  // Convert to network byte order
 
     // 4. Create and send response with group number and signed challenge
     uint8_t response[5];
     response[0] = groupnum;
-    memcpy(&response[1], &group_response, sizeof(group_response));
+    memcpy(&response[1], &group_signature, sizeof(group_signature));
 
     // Send response to server
     sent_bytes = sendto(sock, response, sizeof(response), 0,
@@ -134,4 +133,63 @@ void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, 
 
     close(sock);  // Close the socket after use
     return;
+}
+
+uint32_t get_signature(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret) {
+    // Create a UDP socket
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        cerr << "Error creating socket" << endl;
+        return -1;
+    }
+
+    // Set socket timeout using setsockopt
+    struct timeval timeout;
+    timeout.tv_sec = 1;  // 2-second timeout
+    timeout.tv_usec = 0; // Clear the microseconds part
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        cerr << "Error setting socket timeout" << endl;
+        close(sock);
+        return -1;
+    }
+
+    // Server address setup
+    struct sockaddr_in server_address;
+    memset(&server_address, 0, sizeof(server_address));
+    server_address.sin_family = AF_INET;
+    server_address.sin_port = htons(secret_port);
+    if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
+        cerr << "Invalid IP address" << endl;
+        close(sock);
+        return -1;
+    }
+
+    // 1. Send group number to server
+    uint8_t message = groupnum;
+    ssize_t sent_bytes = sendto(sock, &message, sizeof(message), 0,
+                                (struct sockaddr *)&server_address, sizeof(server_address));
+    if (sent_bytes < 0) {
+        cerr << "Error sending message" << endl;
+        close(sock);
+        return -1;
+    }
+
+    // 2. Receive challenge from server
+    uint32_t group_challenge;
+    socklen_t addr_len = sizeof(server_address);
+    ssize_t recv_bytes = recvfrom(sock, &group_challenge, sizeof(group_challenge), 0,
+                                  (struct sockaddr *)&server_address, &addr_len);
+
+    if (recv_bytes == sizeof(group_challenge)) {
+        // Convert the received challenge to host byte order
+        group_challenge = ntohl(group_challenge);
+    } else {
+        cerr << "Error receiving message" << endl;
+        close(sock);
+        return -1;
+    }
+
+    // 3. Sign challenge with XOR
+    uint32_t group_signature = group_challenge ^ group_secret;
+    return htonl(group_signature);
 }
