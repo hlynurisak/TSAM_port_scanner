@@ -14,7 +14,7 @@
 using namespace std;
 
 void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret);
-uint32_t get_signature(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret);
+void signature_solver(const char *ip_string, size_t port, uint32_t signature);
 
 int main(int argc, char *argv[]) {
 
@@ -41,13 +41,15 @@ int main(int argc, char *argv[]) {
     size_t signature_port   = 4083;
 
     uint8_t groupnum = 51;
-    uint64_t group_secret = 0xed9e8ddc;
+    uint32_t group_secret = 0xed9e8ddc;
 
     secret_solver(ip_string, secret_port, groupnum, group_secret);
 
+    return 0;
+
 }
 
-void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret) {
+void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_t group_secret) {
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
@@ -69,7 +71,7 @@ void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, 
     struct sockaddr_in server_address;
     memset(&server_address, 0, sizeof(server_address));
     server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(secret_port);
+    server_address.sin_port = htons(port);
     if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
         cerr << "Invalid IP address" << endl;
         close(sock);
@@ -97,7 +99,7 @@ void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, 
         group_challenge = ntohl(group_challenge);
         cout << "The group challenge is: 0x" << hex << group_challenge << endl;
     } else {
-        cerr << "Error receiving message" << endl;
+        cerr << "Error receiving challenge" << endl;
         close(sock);
         return;
     }
@@ -128,19 +130,23 @@ void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, 
         buffer[recv_bytes] = '\0';  // Null-terminate the received string
         cout << "Received: " << buffer << endl;
     } else {
-        cerr << "Error receiving message" << endl;
+        cerr << "Error receiving port" << endl;
     }
 
     close(sock);  // Close the socket after use
+
+    signature_solver(ip_string, port, group_signature);
+
     return;
 }
 
-uint32_t get_signature(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret) {
+
+void signature_solver(const char *ip_string, size_t port, uint32_t signature) {
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
         cerr << "Error creating socket" << endl;
-        return -1;
+        return;
     }
 
     // Set socket timeout using setsockopt
@@ -150,46 +156,42 @@ uint32_t get_signature(const char *ip_string, size_t secret_port, uint8_t groupn
     if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
         cerr << "Error setting socket timeout" << endl;
         close(sock);
-        return -1;
+        return;
     }
 
     // Server address setup
     struct sockaddr_in server_address;
     memset(&server_address, 0, sizeof(server_address));
     server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(secret_port);
+    server_address.sin_port = htons(port);
     if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
         cerr << "Invalid IP address" << endl;
         close(sock);
-        return -1;
+        return;
     }
 
-    // 1. Send group number to server
-    uint8_t message = groupnum;
-    ssize_t sent_bytes = sendto(sock, &message, sizeof(message), 0,
+    // Send signature to port
+    ssize_t sent_bytes = sendto(sock, &signature, sizeof(signature), 0,
                                 (struct sockaddr *)&server_address, sizeof(server_address));
     if (sent_bytes < 0) {
         cerr << "Error sending message" << endl;
         close(sock);
-        return -1;
+        return;
     }
 
-    // 2. Receive challenge from server
-    uint32_t group_challenge;
+    // Receive response from server
+    char buffer[BUFFER_SIZE];
     socklen_t addr_len = sizeof(server_address);
-    ssize_t recv_bytes = recvfrom(sock, &group_challenge, sizeof(group_challenge), 0,
+    ssize_t recv_bytes = recvfrom(sock, buffer, BUFFER_SIZE, 0,
                                   (struct sockaddr *)&server_address, &addr_len);
-
-    if (recv_bytes == sizeof(group_challenge)) {
-        // Convert the received challenge to host byte order
-        group_challenge = ntohl(group_challenge);
+    if (recv_bytes > 0) {
+        buffer[recv_bytes] = '\0';  // Null-terminate the received string
+        cout << "Received: " << buffer << endl;
     } else {
         cerr << "Error receiving message" << endl;
-        close(sock);
-        return -1;
     }
 
-    // 3. Sign challenge with XOR
-    uint32_t group_signature = group_challenge ^ group_secret;
-    return htonl(group_signature);
+    close(sock);  // Close the socket after use
+    return;
+
 }
