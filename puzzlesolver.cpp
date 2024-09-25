@@ -106,7 +106,6 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
     if (recv_bytes == sizeof(group_challenge)) {
         // Convert the received challenge to host byte order
         group_challenge = ntohl(group_challenge);
-        cout << "The group challenge is: 0x" << hex << group_challenge << endl;
     } else {
         cerr << "Error receiving challenge" << endl;
         close(sock);
@@ -116,7 +115,6 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
     // 3. Sign challenge with XOR
     uint32_t group_signature = group_challenge ^ group_secret;
     group_signature = htonl(group_signature);  // Convert to network byte order
-    cout << "The group signature is: 0x" << hex << group_signature << endl;
 
     // 4. Create and send response with group number and signed challenge
     uint8_t response[5];
