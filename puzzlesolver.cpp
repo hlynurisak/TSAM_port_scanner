@@ -148,71 +148,50 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
     return;
 }
 
+
 void evil_solver(const char *ip_string, size_t port, uint32_t signature) {
-    // Create a raw socket
-    int sock = socket(AF_INET, SOCK_RAW, IPPROTO_UDP); // Use IPPROTO_UDP
+    // Create UDP socket
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
-        perror("Error creating raw socket");
+        cerr << "Error creating socket" << endl;
         return;
     }
 
-    // Set the IP_HDRINCL option so that we can provide our own IP header
-    int one = 1;
-    if (setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) < 0) {
-        perror("Error setting IP_HDRINCL");
+    // Server address setup
+    struct sockaddr_in server_address;
+    memset(&server_address, 0, sizeof(server_address));
+    server_address.sin_family = AF_INET;
+    server_address.sin_port = htons(port);
+    if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
+        cerr << "Invalid IP address" << endl;
         close(sock);
         return;
     }
 
-    // Build the packet
-    char packet[sizeof(struct ip) + sizeof(struct udphdr) + sizeof(signature)];
-    memset(packet, 0, sizeof(packet));
-
-    // IP header
-    struct ip *iph = (struct ip *)packet;
-    iph->ip_hl = 5; // Header length
-    iph->ip_v = 4;  // IPv4
-    iph->ip_tos = 0;
-    iph->ip_len = htons(sizeof(packet)); // Total length
-    iph->ip_id = htons(54321); // Identification
-    iph->ip_off = htons(0x8000); // Set the evil bit
-    iph->ip_ttl = 64;
-    iph->ip_p = IPPROTO_UDP;
-    iph->ip_sum = 0; // Will be calculated later
-
-    // Set source and destination IP addresses
-    iph->ip_dst.s_addr = inet_addr(ip_string);
-    iph->ip_src.s_addr = inet_addr("your.local.ip.address"); // Replace with your local IP
-
-    // UDP header
-    struct udphdr *udph = (struct udphdr *)(packet + sizeof(struct ip));
-    udph->uh_sport = htons(12345);
-    udph->uh_dport = htons(port);
-    udph->uh_ulen = htons(sizeof(struct udphdr) + sizeof(signature));
-    udph->uh_sum = 0; // UDP checksum (optional)
-
-    // Payload (signature)
-    memcpy(packet + sizeof(struct ip) + sizeof(struct udphdr), &signature, sizeof(signature));
-
-    // Calculate IP checksum
-    iph->ip_sum = checksum((unsigned short *)iph, sizeof(struct ip));
-
-    // Destination address
-    struct sockaddr_in dest_addr;
-    memset(&dest_addr, 0, sizeof(dest_addr));
-    dest_addr.sin_family = AF_INET;
-    dest_addr.sin_addr.s_addr = iph->ip_dst.s_addr;
-
-    // Send the packet
-    if (sendto(sock, packet, sizeof(packet), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) < 0) {
-        perror("Error sending packet");
+    // Convert signature to network byte order
+    uint32_t net_signature = htonl(signature);
+    
+    // Send signature to evil port
+    ssize_t sent_bytes = sendto(sock, &net_signature, sizeof(net_signature), 0,
+                                (struct sockaddr *)&server_address, sizeof(server_address));
+    if (sent_bytes < 0) {
+        cerr << "Error sending packet: " << strerror(errno) << endl;
         close(sock);
         return;
     }
 
-    cout << "Evil packet sent to " << ip_string << ":" << port << endl;
+    // Receive response
+    char buffer[BUFFER_SIZE];
+    socklen_t addr_len = sizeof(server_address);
+    ssize_t recv_bytes = recvfrom(sock, buffer, BUFFER_SIZE, 0,
+                                  (struct sockaddr *)&server_address, &addr_len);
+    if (recv_bytes > 0) {
+        buffer[recv_bytes] = '\0';  // Null-terminate the received string
+        cout << "Received: " << buffer << endl;
+    } else {
+        cerr << "No response from evil port" << endl;
+    }
 
-    // Close the socket
     close(sock);
 }
 
