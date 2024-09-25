@@ -14,7 +14,7 @@
 using namespace std;
 
 void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret);
-void signature_solver(const char *ip_string, size_t port, uint32_t signature);
+void evil_solver(const char *ip_string, size_t port, uint32_t signature);
 
 int main(int argc, char *argv[]) {
 
@@ -48,6 +48,7 @@ int main(int argc, char *argv[]) {
     uint32_t group_signature = 0xe24e0054;
 
     secret_solver(ip_string, secret_port, groupnum, group_secret);
+    evil_solver(ip_string, evil_port, group_signature);
 
     return 0;
 
@@ -140,73 +141,5 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
 
     close(sock);  // Close the socket after use
 
-    // signature_solver(ip_string, port, group_signature);
-
     return;
 }
-
-
-/*
-void signature_solver(const char *ip_string, size_t port, uint32_t signature) {
-    // Create a UDP socket
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) {
-        cerr << "Error creating socket" << endl;
-        return;
-    }
-
-    // Set socket timeout using setsockopt
-    struct timeval timeout;
-    timeout.tv_sec = 1;  // 2-second timeout
-    timeout.tv_usec = 0; // Clear the microseconds part
-    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        cerr << "Error setting socket timeout" << endl;
-        close(sock);
-        return;
-    }
-
-    // Server address setup
-    struct sockaddr_in server_address;
-    memset(&server_address, 0, sizeof(server_address));
-    server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(port);
-    if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
-        cerr << "Invalid IP address" << endl;
-        close(sock);
-        return;
-    }
-
-    // Send signature to port
-    ssize_t sent_bytes = sendto(sock, &signature, sizeof(signature), 0,
-                                (struct sockaddr *)&server_address, sizeof(server_address));
-    if (sent_bytes < 0) {
-        cerr << "Error sending message" << endl;
-        close(sock);
-        return;
-    }
-
-    // Receive response from server
-    char buffer[BUFFER_SIZE];
-    socklen_t addr_len = sizeof(server_address);
-    ssize_t recv_bytes = recvfrom(sock, buffer, BUFFER_SIZE, 0,
-                                  (struct sockaddr *)&server_address, &addr_len);
-    if (recv_bytes > 0) {
-        buffer[recv_bytes] = '\0';  // Null-terminate the received string
-        char last_six_bytes[7];  // 6 bytes + 1 for null terminator
-        memcpy(last_six_bytes, buffer + recv_bytes - 6, 6);
-        last_six_bytes[6] = '\0';  // Null-terminate the last six bytes
-
-        // Null-terminate the original buffer before the last six bytes
-        buffer[recv_bytes - 6] = '\0';
-
-        cout << "Received: " << buffer << endl;
-        cout << "Last six bytes: " << htonl(last_six_bytes) << endl;
-    } else {
-        cerr << "Error receiving message" << endl;
-    }
-
-    close(sock);  // Close the socket after use
-    return;
-
-}
-*/
