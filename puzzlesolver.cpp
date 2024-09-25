@@ -35,13 +35,17 @@ int main(int argc, char *argv[]) {
     // size_t reponse_2 = get_response(ip_string, port2);
     // size_t reponse_3 = get_response(ip_string, port3);
     // size_t reponse_4 = get_response(ip_string, port4);
-    size_t evil_port        = 4012;
-    size_t expstn_port      = 4024;
-    size_t secret_port      = 4041;
-    size_t signature_port   = 4083;
+    size_t evil_port        = 4048;
+    size_t expstn_port      = 4066;
+    size_t secret_port      = 4059;
+    size_t signature_port   = 4047;
+
+    size_t secret_secret_port = 4025;
 
     uint8_t groupnum = 51;
     uint32_t group_secret = 0xed9e8ddc;
+    uint32_t group_challenge = 0xb99ec33e;
+    uint32_t group_signature = 0xe24e0054;
 
     secret_solver(ip_string, secret_port, groupnum, group_secret);
 
@@ -107,6 +111,7 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
     // 3. Sign challenge with XOR
     uint32_t group_signature = group_challenge ^ group_secret;
     group_signature = htonl(group_signature);  // Convert to network byte order
+    cout << "The group signature is: 0x" << hex << group_signature << endl;
 
     // 4. Create and send response with group number and signed challenge
     uint8_t response[5];
@@ -135,15 +140,14 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
 
     close(sock);  // Close the socket after use
 
-    signature_solver(ip_string, port, group_signature);
+    // signature_solver(ip_string, port, group_signature);
 
     return;
 }
 
 
+/*
 void signature_solver(const char *ip_string, size_t port, uint32_t signature) {
-    // TODO REMOVE THIS SKITAMIX
-    port = 4083;
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
@@ -188,7 +192,15 @@ void signature_solver(const char *ip_string, size_t port, uint32_t signature) {
                                   (struct sockaddr *)&server_address, &addr_len);
     if (recv_bytes > 0) {
         buffer[recv_bytes] = '\0';  // Null-terminate the received string
+        char last_six_bytes[7];  // 6 bytes + 1 for null terminator
+        memcpy(last_six_bytes, buffer + recv_bytes - 6, 6);
+        last_six_bytes[6] = '\0';  // Null-terminate the last six bytes
+
+        // Null-terminate the original buffer before the last six bytes
+        buffer[recv_bytes - 6] = '\0';
+
         cout << "Received: " << buffer << endl;
+        cout << "Last six bytes: " << htonl(last_six_bytes) << endl;
     } else {
         cerr << "Error receiving message" << endl;
     }
@@ -197,3 +209,4 @@ void signature_solver(const char *ip_string, size_t port, uint32_t signature) {
     return;
 
 }
+*/
