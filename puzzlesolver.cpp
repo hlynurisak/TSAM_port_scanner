@@ -20,7 +20,7 @@ void evil_solver(const char *ip_string, size_t port, uint32_t signature);
 void signature_solver(const char *ip_string, size_t port, uint32_t signature);
 void secret_phrase_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes);
 
-unsigned short checksum(unsigned short *ptr, int nbytes);
+uint16_t checksum(unsigned short *ptr, int nbytes);
 
 int main(int argc, char *argv[]) {
 
@@ -198,27 +198,19 @@ void evil_solver(const char *ip_string, size_t port, uint32_t signature) {
 
 
 // Function to calculate checksum
-unsigned short checksum(unsigned short *ptr, int nbytes) {
-    long sum;
-    unsigned short oddbyte;
-    unsigned short answer;
-
-    sum = 0;
-    while (nbytes > 1) {
-        sum += *ptr++;
-        nbytes -= 2;
+uint16_t checksum(uint16_t *buf, int len) {
+    uint32_t sum = 0;
+    for (; len > 1; len -= 2) {
+        sum += *buf++;
     }
-    if (nbytes == 1) {
-        oddbyte = 0;
-        *((unsigned char *)&oddbyte) = *(unsigned char *)ptr;
-        sum += oddbyte;
+    if (len == 1) {
+        sum += *(uint8_t *)buf;
     }
-
-    sum  = (sum >> 16) + (sum & 0xffff);
-    sum += (sum >> 16);
-    answer = (unsigned short)~sum;
-
-    return answer;
+    // Fold 32-bit sum to 16 bits
+    while (sum >> 16) {
+        sum = (sum >> 16) + (sum & 0xFFFF);
+    }
+    return (uint16_t)(~sum);
 }
 
 void signature_solver(const char *ip_string, size_t port, uint32_t signature) {
@@ -288,6 +280,23 @@ void signature_solver(const char *ip_string, size_t port, uint32_t signature) {
 }
 
 void secret_phrase_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes) {
+    // Extract desired UDP checksum (first 2 bytes)
+    uint16_t desired_checksum_net_order;
+    memcpy(&desired_checksum_net_order, last_six_bytes, sizeof(uint16_t));
+    uint16_t desired_checksum = ntohs(desired_checksum_net_order); // Convert to host byte order
+
+    // Extract source IP address (next 4 bytes)
+    uint32_t source_ip_net_order;
+    memcpy(&source_ip_net_order, last_six_bytes + 2, sizeof(uint32_t));
+    uint32_t source_ip = ntohl(source_ip_net_order); // Convert to host byte order
+
+    // Convert source IP to string
+    char source_ip_str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &source_ip_net_order, source_ip_str, INET_ADDRSTRLEN);
+
+    cout << "Desired UDP checksum: 0x" << hex << desired_checksum << endl;
+    cout << "Source IP address: " << source_ip_str << endl;
+
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);  // Standard UDP socket
     if (sock < 0) {
@@ -306,10 +315,17 @@ void secret_phrase_solver(const char *ip_string, size_t port, uint8_t *last_six_
         return;
     }
 
-    // Prepare the encapsulated IPv4 packet
-    // The payload of our UDP message will be this IPv4 packet
+    // Set socket timeout
+    struct timeval timeout;
+    timeout.tv_sec = 5;  // 5-second timeout
+    timeout.tv_usec = 0;
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        cerr << "Error setting socket timeout in secret_phrase_solver" << endl;
+        close(sock);
+        return;
+    }
 
-    // Buffer for the encapsulated IPv4 packet
+    // Prepare the encapsulated IPv4 packet
     uint8_t ipv4_packet[sizeof(struct ip) + sizeof(struct udphdr)];
 
     // Fill in the IPv4 header
@@ -323,12 +339,10 @@ void secret_phrase_solver(const char *ip_string, size_t port, uint8_t *last_six_
     inner_iph->ip_ttl = 64;        // Time to live
     inner_iph->ip_p = IPPROTO_UDP; // Protocol
     inner_iph->ip_sum = 0;         // Initial checksum
-    inner_iph->ip_src.s_addr = inet_addr("49.30.45.218");   // Source IP
-    inner_iph->ip_dst.s_addr = inet_addr(ip_string);        // Destination IP (server's IP)
+    inner_iph->ip_src.s_addr = source_ip_net_order;   // Source IP (network byte order)
+    inner_iph->ip_dst.s_addr = inet_addr(ip_string);  // Destination IP (server's IP)
 
-    // Compute IP checksum
-    inner_iph->ip_sum = checksum((unsigned short *)inner_iph, sizeof(struct ip));
-
+    
     // Fill in the UDP header
     struct udphdr *inner_udph = (struct udphdr *)(ipv4_packet + sizeof(struct ip));
     inner_udph->uh_sport = htons(12345);      // Source port (arbitrary)
@@ -361,11 +375,11 @@ void secret_phrase_solver(const char *ip_string, size_t port, uint8_t *last_six_
     inner_udph->uh_sum = checksum((unsigned short *)pseudo_packet, sizeof(pseudo_packet));
 
     // Adjust the source port to achieve the desired checksum if necessary
-    uint16_t desired_checksum = 0xf65d;
     uint16_t original_checksum = ntohs(inner_udph->uh_sum);
 
     if (original_checksum != desired_checksum) {
         cout << "Adjusting source port to achieve desired UDP checksum..." << endl;
+        bool found = false;
         for (uint16_t sport = 1; sport <= 65535; sport++) {
             inner_udph->uh_sport = htons(sport);
 
@@ -375,20 +389,18 @@ void secret_phrase_solver(const char *ip_string, size_t port, uint8_t *last_six_
 
             if (ntohs(inner_udph->uh_sum) == desired_checksum) {
                 cout << "Found matching source port: " << sport << endl;
+                found = true;
                 break;
             }
-
-            // Stop if we have tried all possible ports
-            if (sport == 65535) {
-                cerr << "Could not find a source port to achieve the desired checksum." << endl;
-                close(sock);
-                return;
-            }
         }
+        if (!found) {
+            cerr << "Could not find a source port to achieve the desired checksum." << endl;
+            close(sock);
+            return;
+        }
+    } else {
+        cout << "Original checksum matches the desired checksum." << endl;
     }
-
-    // Now, the encapsulated IPv4 packet is ready
-    // Send this encapsulated packet as the payload of a UDP message back to the server
 
     // Send the UDP message with the encapsulated IPv4 packet as payload
     ssize_t sent_bytes = sendto(sock, ipv4_packet, sizeof(ipv4_packet), 0,
@@ -398,6 +410,19 @@ void secret_phrase_solver(const char *ip_string, size_t port, uint8_t *last_six_
         cerr << "Error sending encapsulated packet: " << strerror(errno) << endl;
     } else {
         cout << "Encapsulated IPv4 packet sent to " << ip_string << ":" << port << endl;
+    }
+
+    // Receive the secret message from the server
+    char buffer[BUFFER_SIZE];
+    socklen_t addr_len = sizeof(struct sockaddr_in);
+    ssize_t recv_bytes = recvfrom(sock, buffer, BUFFER_SIZE - 1, 0,
+                                  (struct sockaddr *)&server_address, &addr_len);
+
+    if (recv_bytes > 0) {
+        buffer[recv_bytes] = '\0';  // Null-terminate the received string
+        cout << "Secret Message Received: " << buffer << endl;
+    } else {
+        cerr << "Error receiving secret message: " << strerror(errno) << endl;
     }
 
     close(sock);
