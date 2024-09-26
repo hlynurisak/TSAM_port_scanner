@@ -27,5 +27,5 @@ Greetings from S.E.C.R.E.T (Secure Encryption Certification Relay with Enhanced 
 5. If your signature is correct, I'll grant you access to the port. Good luck!
 
 
-130.208.246.249:4083 OPEN
+130.208.246.249:4047 OPEN
 Send me a 4-byte message containing the signature you got from S.E.C.R.E.T in the first 4 bytes (in network byte order).
