@@ -17,8 +17,8 @@ using namespace std;
 
 void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret);
 void evil_solver(const char *ip_string, size_t port, uint32_t signature);
-void signature_solver(const char *ip_string, size_t port, uint32_t signature);
-void secret_phrase_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes);
+void checksum_solver(const char *ip_string, size_t port, uint32_t signature);
+void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes);
 
 uint16_t checksum(uint16_t *buf, int len);
 
@@ -55,7 +55,7 @@ int main(int argc, char *argv[]) {
 
     secret_solver(ip_string, secret_port, groupnum, group_secret);
     evil_solver(ip_string, evil_port, group_signature);
-    signature_solver(ip_string, signature_port, group_signature);
+    checksum_solver(ip_string, signature_port, group_signature);
 
     return 0;
 
@@ -221,7 +221,7 @@ uint16_t checksum(uint16_t *buf, int len) {
     return (uint16_t)(~sum);
 }
 
-void signature_solver(const char *ip_string, size_t port, uint32_t signature) {
+void checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
@@ -275,8 +275,8 @@ void signature_solver(const char *ip_string, size_t port, uint32_t signature) {
             uint8_t last_six_bytes[6];
             memcpy(last_six_bytes, buffer + recv_bytes - 6, 6);
 
-            // Call secret_phrase_solver with the extracted bytes
-            secret_phrase_solver(ip_string, port, last_six_bytes);
+            // Call second_checksum_solver with the extracted bytes
+            second_checksum_solver(ip_string, port, last_six_bytes);
         } else {
             cerr << "Received message is too short to extract last 6 bytes." << endl;
         }
@@ -287,7 +287,7 @@ void signature_solver(const char *ip_string, size_t port, uint32_t signature) {
     close(sock);
 }
 
-void secret_phrase_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes) {
+void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes) {
     // Extract desired UDP checksum (first 2 bytes)
     uint16_t desired_checksum_net_order;
     memcpy(&desired_checksum_net_order, last_six_bytes, sizeof(uint16_t));
@@ -308,7 +308,7 @@ void secret_phrase_solver(const char *ip_string, size_t port, uint8_t *last_six_
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);  // Standard UDP socket
     if (sock < 0) {
-        cerr << "Error creating socket in secret_phrase_solver: " << strerror(errno) << endl;
+        cerr << "Error creating socket in second_checksum_solver: " << strerror(errno) << endl;
         return;
     }
 
@@ -318,7 +318,7 @@ void secret_phrase_solver(const char *ip_string, size_t port, uint8_t *last_six_
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(port);  // Send to the same port
     if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
-        cerr << "Invalid IP address in secret_phrase_solver" << endl;
+        cerr << "Invalid IP address in second_checksum_solver" << endl;
         close(sock);
         return;
     }
@@ -328,7 +328,7 @@ void secret_phrase_solver(const char *ip_string, size_t port, uint8_t *last_six_
     timeout.tv_sec = 5;  // 5-second timeout
     timeout.tv_usec = 0;
     if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        cerr << "Error setting socket timeout in secret_phrase_solver" << endl;
+        cerr << "Error setting socket timeout in second_checksum_solver" << endl;
         close(sock);
         return;
     }
