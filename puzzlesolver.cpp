@@ -57,6 +57,51 @@ int main(int argc, char *argv[]) {
     evil_solver(ip_string, evil_port, group_signature);
     signature_solver(ip_string, signature_port, group_signature);
 
+  
+    // Create a UDP socket
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        perror("Error creating socket");
+        return 1;
+    }
+
+    // Set up the source address (for outgoing packets)
+    struct sockaddr_in source_address;
+    memset(&source_address, 0, sizeof(source_address));
+    source_address.sin_family = AF_INET;
+    source_address.sin_addr.s_addr = INADDR_ANY;  // Let the system select the source IP
+    source_address.sin_port = htons(12345);  // Set the source port
+
+    // Bind the socket to the source address (optional if you need to receive responses)
+    if (bind(sock, (struct sockaddr *)&source_address, sizeof(source_address)) < 0) {
+        perror("Error binding source address");
+        close(sock);
+        return 1;
+    }
+
+    // Set up the destination address
+    struct sockaddr_in dest_address;
+    memset(&dest_address, 0, sizeof(dest_address));
+    dest_address.sin_family = AF_INET;
+    dest_address.sin_port = htons(4048);  // Destination port (for evil port)
+    inet_pton(AF_INET, "130.208.246.249", &dest_address.sin_addr);  // Destination IP
+
+    // Message to send (for example, 4 bytes containing the signature)
+    uint32_t signature = htonl(0xe24e0054);  // Example signature
+    char buffer[BUFFER_SIZE];
+    memcpy(buffer, &signature, sizeof(signature));
+
+    // Send the packet
+    ssize_t sent_bytes = sendto(sock, buffer, sizeof(signature), 0, 
+                                (struct sockaddr *)&dest_address, sizeof(dest_address));
+    if (sent_bytes < 0) {
+        perror("Error sending packet");
+    } else {
+        std::cout << "Packet sent successfully, " << sent_bytes << " bytes." << std::endl;
+    }
+
+    // Close the socket
+    close(sock);
     return 0;
 
 }
@@ -151,10 +196,10 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
 
 
 void evil_solver(const char *ip_string, size_t port, uint32_t signature) {
-    // Create UDP socket
+    // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
-        cerr << "Error creating socket" << endl;
+        cerr << "Error creating socket: " << strerror(errno) << endl;
         return;
     }
 
@@ -164,14 +209,15 @@ void evil_solver(const char *ip_string, size_t port, uint32_t signature) {
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(port);
     if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
-        cerr << "Invalid IP address" << endl;
+        cerr << "Invalid IP address: " << ip_string << endl;
         close(sock);
         return;
     }
 
     // Convert signature to network byte order
-    uint32_t net_signature = htonl(signature);
-    
+    uint32_t net_signature = htonl(signature);  // Convert to network byte order
+    sendto(sock, &net_signature, sizeof(net_signature), 0, (struct sockaddr *)&server_address, sizeof(server_address));
+
     // Send signature to evil port
     ssize_t sent_bytes = sendto(sock, &net_signature, sizeof(net_signature), 0,
                                 (struct sockaddr *)&server_address, sizeof(server_address));
@@ -180,6 +226,8 @@ void evil_solver(const char *ip_string, size_t port, uint32_t signature) {
         close(sock);
         return;
     }
+
+    cout << "Signature sent to " << ip_string << ":" << port << endl;
 
     // Receive response
     char buffer[BUFFER_SIZE];
@@ -190,7 +238,7 @@ void evil_solver(const char *ip_string, size_t port, uint32_t signature) {
         buffer[recv_bytes] = '\0';  // Null-terminate the received string
         cout << "Received: " << buffer << endl;
     } else {
-        cerr << "No response from evil port" << endl;
+        cerr << "Error receiving response" << endl;
     }
 
     close(sock);
