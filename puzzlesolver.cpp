@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+#include <iomanip>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <cstdlib>
@@ -16,7 +17,7 @@
 using namespace std;
 
 void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret);
-void evil_solver(const char *ip_string, size_t port, uint32_t signature);
+bool evil_solver(const char *ip_string, size_t port, uint32_t signature);
 void checksum_solver(const char *ip_string, size_t port, uint32_t signature);
 void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes);
 
@@ -53,57 +54,18 @@ int main(int argc, char *argv[]) {
     uint32_t group_challenge = 0xb99ec33e;
     uint32_t group_signature = 0xe24e0054;
 
-    secret_solver(ip_string, secret_port, groupnum, group_secret);
+    // secret_solver(ip_string, secret_port, groupnum, group_secret);
     evil_solver(ip_string, evil_port, group_signature);
-    checksum_solver(ip_string, signature_port, group_signature);
+    // checksum_solver(ip_string, signature_port, group_signature);
 
-  
-    // Create a UDP socket
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) {
-        perror("Error creating socket");
-        return 1;
-    }
-
-    // Set up the source address (for outgoing packets)
-    struct sockaddr_in source_address;
-    memset(&source_address, 0, sizeof(source_address));
-    source_address.sin_family = AF_INET;
-    source_address.sin_addr.s_addr = INADDR_ANY;  // Let the system select the source IP
-    source_address.sin_port = htons(12345);  // Set the source port
-
-    // Bind the socket to the source address (optional if you need to receive responses)
-    if (bind(sock, (struct sockaddr *)&source_address, sizeof(source_address)) < 0) {
-        perror("Error binding source address");
-        close(sock);
-        return 1;
-    }
-
-    // Set up the destination address
-    struct sockaddr_in dest_address;
-    memset(&dest_address, 0, sizeof(dest_address));
-    dest_address.sin_family = AF_INET;
-    dest_address.sin_port = htons(4048);  // Destination port (for evil port)
-    inet_pton(AF_INET, "130.208.246.249", &dest_address.sin_addr);  // Destination IP
-
-    // Message to send (for example, 4 bytes containing the signature)
-    uint32_t signature = htonl(0xe24e0054);  // Example signature
-    char buffer[BUFFER_SIZE];
-    memcpy(buffer, &signature, sizeof(signature));
-
-    // Send the packet
-    ssize_t sent_bytes = sendto(sock, buffer, sizeof(signature), 0, 
-                                (struct sockaddr *)&dest_address, sizeof(dest_address));
-    if (sent_bytes < 0) {
-        perror("Error sending packet");
-    } else {
-        std::cout << "Packet sent successfully, " << sent_bytes << " bytes." << std::endl;
-    }
-
-    // Close the socket
-    close(sock);
     return 0;
 
+}
+
+void hex_print(const char data[], size_t length) {
+    for (size_t i = 0; i < length; ++i) {
+        cout << hex << setw(2) << setfill('0') << (static_cast<unsigned int>(data[i]) & 0xFF) << " ";
+    }
 }
 
 void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_t group_secret) {
@@ -195,53 +157,110 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
 }
 
 
-void evil_solver(const char *ip_string, size_t port, uint32_t signature) {
+bool evil_solver(const char *ip_string, size_t port, uint32_t signature) {
     // Create a UDP socket
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) {
-        cerr << "Error creating socket: " << strerror(errno) << endl;
-        return;
+    int send_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+    if (send_sock < 0) {
+        perror("Error creating socket");
+        return false;
     }
 
-    // Server address setup
-    struct sockaddr_in server_address;
-    memset(&server_address, 0, sizeof(server_address));
-    server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(port);
-    if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
-        cerr << "Invalid IP address: " << ip_string << endl;
-        close(sock);
-        return;
+    int recv_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (recv_sock < 0) {
+        perror("Error creating recv socket");
+        close(send_sock);
+        return false;
     }
 
-    // Convert signature to network byte order
-    uint32_t net_signature = htonl(signature);  // Convert to network byte order
-    sendto(sock, &net_signature, sizeof(net_signature), 0, (struct sockaddr *)&server_address, sizeof(server_address));
+    // Set up the source address (for outgoing packets)
+    struct sockaddr_in source_address;
+    source_address.sin_family = AF_INET;
+    source_address.sin_addr.s_addr = INADDR_ANY;  // Let the system select the source IP
+    source_address.sin_port = htons(54321);
 
-    // Send signature to evil port
-    ssize_t sent_bytes = sendto(sock, &net_signature, sizeof(net_signature), 0,
-                                (struct sockaddr *)&server_address, sizeof(server_address));
-    if (sent_bytes < 0) {
-        cerr << "Error sending packet: " << strerror(errno) << endl;
-        close(sock);
-        return;
+    // Bind the receiving socket to listen for responses on the same port
+    if (bind(recv_sock, (struct sockaddr *)&source_address, sizeof(source_address)) < 0) {
+        perror("Error binding recv_sock");
+        close(send_sock);
+        close(recv_sock);
+        return false;
     }
 
-    cout << "Signature sent to " << ip_string << ":" << port << endl;
+    // Zero out the packet buffer
+    struct sockaddr_in dest_addr;
+    // Set up the destination address
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = htons(port);  // Destination port
+    if (inet_pton(AF_INET, ip_string, &dest_addr.sin_addr) < 0) {
+        perror("Invalid IP");
+        close(send_sock);
+        close(recv_sock);
+        return false;
+    }
 
-    // Receive response
+    // Message to send (for example, 4 bytes containing the signature)
     char buffer[BUFFER_SIZE];
-    socklen_t addr_len = sizeof(server_address);
-    ssize_t recv_bytes = recvfrom(sock, buffer, BUFFER_SIZE, 0,
-                                  (struct sockaddr *)&server_address, &addr_len);
+    memset(buffer, 0, BUFFER_SIZE);
+
+// new
+    struct ip *ip_hdr = (struct ip *) buffer;
+    struct udphdr *udp_hdr = (struct udphdr *) (buffer + sizeof(struct ip));
+
+    // Set IP_HDRINCL option
+    int optval = 1;
+    if (setsockopt(send_sock, IPPROTO_IP, IP_HDRINCL, &optval, sizeof(optval)) < 0) {
+        perror("setsockopt(IP_HDRINCL) failed");
+        return false;
+    }
+
+    // Construct the IP header
+    ip_hdr->ip_hl = 5;               // Header length
+    ip_hdr->ip_v = 4;                // IPv4
+    ip_hdr->ip_tos = 0;              // Type of service
+    ip_hdr->ip_len = htons(sizeof(struct ip) + sizeof(struct udphdr) + 4); // Total length
+    ip_hdr->ip_id = htonl(port);
+    ip_hdr->ip_off |= 0x8000;          // Fragment offset
+    ip_hdr->ip_ttl = 64;             // Time to live
+    ip_hdr->ip_p = IPPROTO_UDP;      // Protocol (UDP)
+    ip_hdr->ip_src.s_addr = source_address.sin_addr.s_addr; // Source IP
+    ip_hdr->ip_dst.s_addr = dest_addr.sin_addr.s_addr; // Destination IP
+    ip_hdr->ip_sum = 0;              // Kernel will calculate the checksum
+
+    // Construct the UDP header
+    udp_hdr->uh_sport = htons(54321);  // Source port
+    udp_hdr->uh_dport = htons(port); // Destination port
+    udp_hdr->uh_ulen = htons(sizeof(struct udphdr) + 4); // UDP length
+    udp_hdr->uh_sum = 0;              // No checksum for simplicity
+
+
+    memcpy(buffer, ip_hdr, sizeof(struct ip));
+    memcpy(buffer + sizeof(struct ip), udp_hdr, sizeof(struct udphdr));
+    memcpy(buffer + sizeof(struct ip) + sizeof(struct udphdr), &signature, sizeof(signature));
+
+
+
+    // Send the packet
+    if (sendto(send_sock, buffer, ip_hdr->ip_len, 0, (struct sockaddr *)&dest_addr, sizeof(sockaddr)) < 0) {
+        close(send_sock);
+        close(recv_sock);
+        perror("sendto failed");
+        return false;
+    }
+
+    // Now use the UDP socket to receive the response
+    struct sockaddr_in recv_addr;
+    socklen_t addr_len = sizeof(recv_addr);
+    ssize_t recv_bytes = recvfrom(recv_sock, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&recv_addr, &addr_len);
     if (recv_bytes > 0) {
         buffer[recv_bytes] = '\0';  // Null-terminate the received string
         cout << "Received: " << buffer << endl;
     } else {
-        cerr << "Error receiving response" << endl;
+        perror("recvfrom failed");
     }
 
-    close(sock);
+    close(send_sock);
+    close(recv_sock);
+    return true;
 }
 
 // Function to calculate checksum
