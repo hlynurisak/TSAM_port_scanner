@@ -16,10 +16,10 @@
 
 using namespace std;
 
-void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret);
+void secret_solver(const char *ip_string, uint8_t groupnum, uint32_t group_secret);
 bool evil_solver(const char *ip_string, uint32_t signature);
-void checksum_solver(const char *ip_string, size_t port, uint32_t signature);
-void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes);
+void checksum_solver(const char *ip_string, uint32_t signature);
+void second_checksum_solver(const char *ip_string, uint8_t *last_six_bytes);
 
 uint16_t checksum(uint16_t *buf, int len);
 
@@ -94,7 +94,10 @@ void hex_print(const char data[], size_t length) {
     }
 }
 
-void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_t group_secret) {
+void secret_solver(const char *ip_string, uint8_t groupnum, uint32_t group_secret) {
+    
+    size_t secret_port = 4059;  // Hardcode the secret port
+
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
@@ -112,7 +115,7 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
     struct sockaddr_in server_address;
     memset(&server_address, 0, sizeof(server_address));
     server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(port);
+    server_address.sin_port = htons(secret_port);
     if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
         cerr << "Invalid IP address" << endl;
         close(sock);
@@ -327,7 +330,12 @@ bool evil_solver(const char *ip_string, uint32_t signature) {
     return true;
 }
 
-void checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
+
+
+void checksum_solver(const char *ip_string, uint32_t signature) {
+    
+    size_t checksum_port = 4047;  // Hardcoded checksum port
+
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
@@ -349,7 +357,7 @@ void checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
     struct sockaddr_in server_address;
     memset(&server_address, 0, sizeof(server_address));
     server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(port);
+    server_address.sin_port = htons(checksum_port);
     if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
         cerr << "Invalid IP address" << endl;
         close(sock);
@@ -365,7 +373,7 @@ void checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
         return;
     }
 
-    cout << "Signature sent to " << ip_string << ":" << port << endl;
+    cout << "Signature sent to " << ip_string << ":" << checksum_port << endl;
 
     char buffer[BUFFER_SIZE];
     socklen_t addr_len = sizeof(struct sockaddr_in);
@@ -382,7 +390,7 @@ void checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
             memcpy(last_six_bytes, buffer + recv_bytes - 6, 6);
 
             // Call second_checksum_solver with the extracted bytes
-            second_checksum_solver(ip_string, port, last_six_bytes);
+            second_checksum_solver(ip_string, last_six_bytes);
         } else {
             cerr << "Received message is too short to extract last 6 bytes." << endl;
         }
@@ -393,7 +401,9 @@ void checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
     close(sock);
 }
 
-void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes) {
+void second_checksum_solver(const char *ip_string, uint8_t *last_six_bytes) {
+    size_t checksum_port = 4047;  // Hardcoded checksum port
+
     // Extract desired UDP checksum (first 2 bytes)
     uint16_t desired_checksum_net_order;
     memcpy(&desired_checksum_net_order, last_six_bytes, sizeof(uint16_t));
@@ -422,7 +432,7 @@ void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_si
     struct sockaddr_in server_address;
     memset(&server_address, 0, sizeof(struct sockaddr_in));
     server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(port);  // Send to the same port
+    server_address.sin_port = htons(checksum_port);  // Send to the same port
     if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
         cerr << "Invalid IP address in second_checksum_solver" << endl;
         close(sock);
@@ -464,7 +474,7 @@ void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_si
     // Fill in the UDP header
     struct udphdr *inner_udph = (struct udphdr *)(ipv4_packet + sizeof(struct ip));
     inner_udph->uh_sport = htons(12345);      // Source port (arbitrary)
-    inner_udph->uh_dport = htons(port);       // Destination port (server's port)
+    inner_udph->uh_dport = htons(checksum_port);       // Destination port (server's port)
     inner_udph->uh_ulen = htons(sizeof(struct udphdr) + inner_udp_payload_len); // UDP header + payload length
     inner_udph->uh_sum = 0;                   // Initialize checksum to zero
 
@@ -537,7 +547,7 @@ void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_si
     if (sent_bytes < 0) {
         cerr << "Error sending encapsulated packet: " << strerror(errno) << endl;
     } else {
-        cout << "Encapsulated IPv4 packet sent to " << ip_string << ":" << port << endl;
+        cout << "Encapsulated IPv4 packet sent to " << ip_string << ":" << checksum_port << endl;
     }
 
     // Receive the secret message from the server
