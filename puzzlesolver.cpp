@@ -25,7 +25,7 @@ void hex_print(const char data[], size_t length); // REMOVE THIS LINE AND THE FU
 
 uint16_t checksum(uint16_t *buf, int len);
 
-// Function to calculate checksum
+// Checksum calculator
 uint16_t checksum(uint16_t *buf, int len) {
     uint32_t sum = 0;
     uint16_t *w = buf;
@@ -180,7 +180,6 @@ bool secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
 
     return true;
 }
-
 
 bool evil_solver(const char *ip_string, uint32_t signature) {
     // Hardcode the destination port bc I can not reach the port from home network
@@ -370,13 +369,13 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
 
     cout << "Signature sent to " << ip_string << ":" << port << endl;
 
-    char buffer[2048];
+    char buffer[BUFFER_SIZE];
     socklen_t addr_len = sizeof(struct sockaddr_in);
     ssize_t recv_bytes = recvfrom(sock, buffer, sizeof(buffer), 0,
                                   (struct sockaddr *)&server_address, &addr_len);
 
     if (recv_bytes > 0) {
-        buffer[recv_bytes] = '\0';  // Null-terminate the received string
+        buffer[recv_bytes] = '\0';  // Null-terminate response
         cout << "Received: " << buffer << endl;
 
         // Extract the last 6 bytes
@@ -388,24 +387,24 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
             uint16_t udp_checksum_network_order;
             uint32_t source_ip_network_order;
 
-            memcpy(&udp_checksum_network_order, last_six_bytes, 2); // First 2 bytes
-            memcpy(&source_ip_network_order, last_six_bytes + 2, 4); // Next 4 bytes
+            memcpy(&udp_checksum_network_order, last_six_bytes, 2); // First 2 bytes (UDP checksum)
+            memcpy(&source_ip_network_order, last_six_bytes + 2, 4); // Next 4 bytes (source IP)
 
-            // Convert from network byte order to host byte order
+            // Convert to host byte order
             uint16_t required_udp_checksum = ntohs(udp_checksum_network_order);
             uint32_t source_ip = ntohl(source_ip_network_order);
 
-            // Print extracted values for verification
+            // Print to check if its right
             printf("Extracted UDP checksum: 0x%04x\n", required_udp_checksum);
             struct in_addr ip_addr;
             ip_addr.s_addr = htonl(source_ip);
             printf("Extracted source IP: %s\n", inet_ntoa(ip_addr));
 
-            // Now construct the encapsulated packet
+            // Construct packet to encapsualate and do checksum on
             size_t packet_size = sizeof(struct ip) + sizeof(struct udphdr);
             uint8_t *encapsulated_packet = new uint8_t[packet_size];
 
-            // Fill in the IPv4 header
+            // Fill in IPv4 header
             struct ip *inner_iph = (struct ip *)encapsulated_packet;
             inner_iph->ip_hl = 5;  // Header length (5 * 4 = 20 bytes)
             inner_iph->ip_v = 4;   // IPv4
@@ -419,15 +418,15 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
             inner_iph->ip_src.s_addr = source_ip_network_order; // Source IP (network byte order)
             inner_iph->ip_dst.s_addr = server_address.sin_addr.s_addr; // Destination IP
 
-            // Fill in the UDP header
+            // Fill in UDP header
             struct udphdr *inner_udph = (struct udphdr *)(encapsulated_packet + sizeof(struct ip));
-            uint16_t source_port = 12345; // Arbitrary source port
+            uint16_t source_port = 12345; // Random source port to start with
             inner_udph->uh_sport = htons(source_port);
             inner_udph->uh_dport = htons(port);
             inner_udph->uh_ulen = htons(sizeof(struct udphdr)); // UDP header length
             inner_udph->uh_sum = 0; // Initialize checksum to zero
 
-            // Calculate UDP checksum
+            // Create a pseudo-header for the calculation
             struct pseudo_header {
                 uint32_t src_addr;
                 uint32_t dst_addr;
@@ -453,14 +452,14 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
             // Calculate checksum
             inner_udph->uh_sum = checksum((uint16_t *)pseudo_packet, pseudo_packet_len);
 
-            // Adjust source port if necessary to match the required checksum
+            // Change the source port until the checksum comes back the same
             uint16_t original_checksum = ntohs(inner_udph->uh_sum);
             if (original_checksum != required_udp_checksum) {
                 bool checksum_matched = false;
                 for (uint16_t sport = 1024; sport <= 65535; sport++) {
                     inner_udph->uh_sport = htons(sport);
 
-                    // Recompute the checksum
+                    // Calculate new checksum
                     memcpy(pseudo_packet + sizeof(struct pseudo_header), inner_udph, ntohs(psh.udp_length));
                     inner_udph->uh_sum = checksum((uint16_t *)pseudo_packet, pseudo_packet_len);
 
@@ -470,6 +469,7 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
                     }
                 }
                 if (!checksum_matched) {
+                    // Clear the memory if it can't get the correct checksum
                     cerr << "Could not find a source port to achieve the desired checksum." << endl;
                     delete[] encapsulated_packet;
                     delete[] pseudo_packet;
@@ -478,7 +478,7 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
                 }
             }
 
-            // Send the encapsulated packet as the payload in a UDP message
+            // Send the packet with the checksum as the payload in another UDP message
             sent_bytes = sendto(sock, encapsulated_packet, packet_size, 0,
                                 (struct sockaddr *)&server_address, sizeof(server_address));
             if (sent_bytes < 0) {
@@ -495,6 +495,7 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
             delete[] encapsulated_packet;
             delete[] pseudo_packet;
 
+            // Receive the response
             recv_bytes = recvfrom(sock, buffer, sizeof(buffer), 0,
                                   (struct sockaddr *)&server_address, &addr_len);
             if (recv_bytes > 0) {
