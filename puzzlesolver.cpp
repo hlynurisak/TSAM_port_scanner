@@ -82,9 +82,12 @@ int main(int argc, char *argv[]) {
     }
     */
     evil_solver(ip_string, evil_port, group_signature);
+    
+    /*
     while (!checksum_solver(ip_string, signature_port, group_signature)) {
         checksum_solver(ip_string, signature_port, group_signature);
     }
+    */
 
     return 0;
 }
@@ -224,10 +227,9 @@ bool evil_solver(const char *ip_string, size_t port, uint32_t signature) {
     udp_hdr->uh_sum = 0;                  // Checksum initially 0 (calculated later)
 
     // Copy the signature into the data payload
-    uint32_t net_signature = htonl(signature);  // Convert signature to network byte order
-    memcpy(datagram + sizeof(struct ip) + sizeof(struct udphdr), &net_signature, sizeof(net_signature));
+    memcpy(datagram + sizeof(struct ip) + sizeof(struct udphdr), &signature, sizeof(signature));
 
-    // Calculate the IP checksum
+    // Calculate the IP checksum (Not actually necessary)
     ip_hdr->ip_sum = checksum((unsigned short *)datagram, sizeof(struct ip));
 
     // Create pseudo-header for UDP checksum calculation
