@@ -21,7 +21,7 @@ bool evil_solver(const char *ip_string, uint32_t signature);
 bool checksum_solver(const char *ip_string, size_t port, uint32_t signature);
 void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes);
 
-void hex_print(const char data[], size_t length); // REMOVE THIS LINE AND THE FUNCTION ITSELF
+void hex_print(const char data[], size_t length); // TODO: REMOVE THIS LINE AND THE FUNCTION ITSELF
 
 uint16_t checksum(uint16_t *buf, int len);
 
