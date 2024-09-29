@@ -16,8 +16,6 @@ How to use E.X.P.S.T.N?
 Tip: To discover the secret ports and their associated phrases, start by solving challenges on the ports detected using your port scanner. Happy hunting!
 
 
-
-
 130.208.246.249:4041 OPEN
 Greetings from S.E.C.R.E.T (Secure Encryption Certification Relay with Enhanced Trust)! Here's how to access the secret port I'm safeguarding:
 1. Send me your group number as a single unsigned byte.
