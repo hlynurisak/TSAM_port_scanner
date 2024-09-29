@@ -16,7 +16,7 @@
 
 using namespace std;
 
-void secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret);
+bool secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret);
 bool evil_solver(const char *ip_string, uint32_t signature);
 void checksum_solver(const char *ip_string, size_t port, uint32_t signature);
 void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes);
@@ -64,10 +64,6 @@ int main(int argc, char *argv[]) {
     int port3 = atoi(argv[4]);
     int port4 = atoi(argv[5]);
 
-    // size_t reponse_1 = get_response(ip_string, port1);
-    // size_t reponse_2 = get_response(ip_string, port2);
-    // size_t reponse_3 = get_response(ip_string, port3);
-    // size_t reponse_4 = get_response(ip_string, port4);
     size_t evil_port        = 4048;
     size_t expstn_port      = 4066;
     size_t secret_port      = 4059;
@@ -80,7 +76,10 @@ int main(int argc, char *argv[]) {
     uint32_t group_challenge = 0xb99ec33e;
     uint32_t group_signature = 0xe24e0054;
 
-    // secret_solver(ip_string, secret_port, groupnum, group_secret);
+    while (!secret_solver(ip_string, secret_port, groupnum, group_secret)) {
+        cout << "Failed to solve secret port" << endl;
+        secret_solver(ip_string, secret_port, groupnum, group_secret);
+    }
     evil_solver(ip_string, group_signature);
     // checksum_solver(ip_string, signature_port, group_signature);
 
@@ -94,12 +93,13 @@ void hex_print(const char data[], size_t length) {
     }
 }
 
-void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_t group_secret) {
+bool secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_t group_secret) {
+    cout << "Solving the secret port..." << endl;
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
         cerr << "Error creating socket" << endl;
-        return;
+        return false;
     }
 
     // Set socket timeout using setsockopt
@@ -116,7 +116,7 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
     if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
         cerr << "Invalid IP address" << endl;
         close(sock);
-        return;
+        return false;
     }
 
     // 1. Send group number to server
@@ -126,7 +126,7 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
     if (sent_bytes < 0) {
         cerr << "Error sending message" << endl;
         close(sock);
-        return;
+        return false;
     }
 
     // 2. Receive challenge from server
@@ -141,7 +141,7 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
     } else {
         cerr << "Error receiving challenge" << endl;
         close(sock);
-        return;
+        return false;
     }
 
     // 3. Sign challenge with XOR
@@ -159,7 +159,7 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
     if (sent_bytes < 0) {
         cerr << "Error sending message" << endl;
         close(sock);
-        return;
+        return false;
     }
 
     // 5. Receive port from server
@@ -171,11 +171,12 @@ void secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
         cout << "Received: " << buffer << endl;
     } else {
         cerr << "Error receiving port" << endl;
+        return false;
     }
 
     close(sock);  // Close the socket after use
 
-    return;
+    return true;
 }
 
 
