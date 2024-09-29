@@ -181,10 +181,8 @@ bool secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
     return true;
 }
 
-bool evil_solver(const char *ip_string, uint32_t signature) {
-    // Hardcode the destination port bc I can not reach the port from home network
-    const uint16_t hardcoded_port = 4048;
-    std::cout << "Solving the EVIL bit..." << std::endl;
+bool evil_solver(const char *ip_string, size_t port, uint32_t signature) {
+    cout << "Solving the EVIL port ..." << endl;
 
     // Create a raw socket
     int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
@@ -193,7 +191,7 @@ bool evil_solver(const char *ip_string, uint32_t signature) {
         return false;
     }
 
-    // Set IP_HDRINCL to indicate that we're including the IP header
+    // Set IP_HDRINCL for MacOS
     int optval = 1;
     if (setsockopt(raw_sock, IPPROTO_IP, IP_HDRINCL, &optval, sizeof(optval)) < 0) {
         perror("setsockopt(IP_HDRINCL) failed");
@@ -215,13 +213,13 @@ bool evil_solver(const char *ip_string, uint32_t signature) {
     ip_hdr->ip_off = (0x8000);   // Evil bit set (0x8000 means "Don't Fragment" + Evil Bit)
     ip_hdr->ip_ttl = 64;             // Time to live
     ip_hdr->ip_p = IPPROTO_UDP;      // Protocol (UDP)
-    ip_hdr->ip_src.s_addr = inet_addr("127.0.0.1"); // Localhost as source IP
-    ip_hdr->ip_dst.s_addr = inet_addr("127.0.0.1");   // Destination IP (server)
+    ip_hdr->ip_src.s_addr = INADDR_ANY; // Autofill source IP
+    ip_hdr->ip_dst.s_addr = inet_addr(ip_string);   // Destination IP (server)
 
     // Set up the UDP header
     struct udphdr *udp_hdr = (struct udphdr *) (datagram + sizeof(struct ip));
     udp_hdr->uh_sport = htons(54321);     // Source port
-    udp_hdr->uh_dport = htons(hardcoded_port);      // Destination port (server port)
+    udp_hdr->uh_dport = htons(port);      // Destination port (server port)
     udp_hdr->uh_ulen = htons(sizeof(struct udphdr) + sizeof(signature)); // UDP length
     udp_hdr->uh_sum = 0;                  // Checksum initially 0 (calculated later)
 
@@ -264,7 +262,7 @@ bool evil_solver(const char *ip_string, uint32_t signature) {
     struct sockaddr_in dest_addr;
     memset(&dest_addr, 0, sizeof(dest_addr));
     dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(hardcoded_port);
+    dest_addr.sin_port = htons(port);
     dest_addr.sin_addr.s_addr = inet_addr(ip_string);
 
     // Send the packet using sendto()
@@ -275,7 +273,7 @@ bool evil_solver(const char *ip_string, uint32_t signature) {
         return false;
     }
        
-    std::cout << "Packet sent successfully to port " << hardcoded_port << "!" << std::endl;
+    cout << "Packet sent successfully to port " << port << "!" << endl;
 
 
     // Receive the response using a regular UDP socket
@@ -317,7 +315,7 @@ bool evil_solver(const char *ip_string, uint32_t signature) {
     ssize_t recv_bytes = recvfrom(recv_sock, recv_buffer, BUFFER_SIZE, 0, (struct sockaddr *)&recv_addr, &recv_len);
     if (recv_bytes > 0) {
         recv_buffer[recv_bytes] = '\0';
-        std::cout << "Received: " << recv_buffer << std::endl;
+        cout << "Received: " << recv_buffer << endl;
     } else {
         perror("recvfrom failed");
     }
