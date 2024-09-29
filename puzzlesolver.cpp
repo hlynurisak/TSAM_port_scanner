@@ -87,9 +87,11 @@ int main(int argc, char *argv[]) {
         secret_solver(ip_string, secret_port, groupnum, group_secret);
     }
     */
-    evil_solver(ip_string, evil_port, group_signature);
     
     /*
+    evil_solver(ip_string, evil_port, group_signature);
+    */
+
     while (!checksum_solver(ip_string, signature_port, group_signature)) {
         checksum_solver(ip_string, signature_port, group_signature);
     }
