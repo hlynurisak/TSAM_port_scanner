@@ -17,7 +17,7 @@
 using namespace std;
 
 bool secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret);
-bool evil_solver(const char *ip_string, uint32_t signature);
+bool evil_solver(const char *ip_string, size_t port, uint32_t signature);
 bool checksum_solver(const char *ip_string, size_t port, uint32_t signature);
 void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes);
 
@@ -81,7 +81,7 @@ int main(int argc, char *argv[]) {
         secret_solver(ip_string, secret_port, groupnum, group_secret);
     }
     */
-    // evil_solver(ip_string, group_signature);
+    evil_solver(ip_string, evil_port, group_signature);
     while (!checksum_solver(ip_string, signature_port, group_signature)) {
         checksum_solver(ip_string, signature_port, group_signature);
     }
@@ -239,25 +239,6 @@ bool evil_solver(const char *ip_string, size_t port, uint32_t signature) {
         uint16_t udp_length;
     };
 
-    struct pseudo_header psh;
-    psh.src_ip = ip_hdr->ip_src.s_addr;
-    psh.dst_ip = ip_hdr->ip_dst.s_addr;
-    psh.reserved = 0;
-    psh.protocol = IPPROTO_UDP;
-    psh.udp_length = udp_hdr->uh_ulen;
-
-    // Create buffer for pseudo-header and UDP packet for checksum calculation
-    int psize = sizeof(struct pseudo_header) + sizeof(struct udphdr) + sizeof(signature);
-    char *pseudogram = new char[psize];
-
-    // Copy pseudo-header and UDP header + data into pseudogram
-    memcpy(pseudogram, &psh, sizeof(struct pseudo_header));
-    memcpy(pseudogram + sizeof(struct pseudo_header), udp_hdr, sizeof(struct udphdr) + sizeof(signature));
-
-    // Calculate the UDP checksum and set it in the UDP header
-    udp_hdr->uh_sum = checksum((unsigned short *)pseudogram, psize);
-    delete[] pseudogram; // Free the memory
-
     // Set up destination address for sending the packet
     struct sockaddr_in dest_addr;
     memset(&dest_addr, 0, sizeof(dest_addr));
@@ -275,7 +256,6 @@ bool evil_solver(const char *ip_string, size_t port, uint32_t signature) {
        
     cout << "Packet sent successfully to port " << port << "!" << endl;
 
-
     // Receive the response using a regular UDP socket
     int recv_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (recv_sock < 0) {
@@ -284,7 +264,7 @@ bool evil_solver(const char *ip_string, size_t port, uint32_t signature) {
         return false;
     }
 
-    // Bind the receiving socket to the same port
+    // Bind the receiving socket to the same port as the raw socket
     struct sockaddr_in recv_addr;
     memset(&recv_addr, 0, sizeof(recv_addr));
     recv_addr.sin_family = AF_INET;
