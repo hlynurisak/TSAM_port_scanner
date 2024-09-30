@@ -748,59 +748,47 @@ bool knock_solver(const char *ip_string, uint16_t port, uint32_t signature) {
 
     buffer[recv_bytes] = '\0';  // Null-terminate the received string
     string response(buffer);
-    cout << "Received from E.X.P.S.T.N: [" << response << "]" << endl;
+    cout << "Received from E.X.P.S.T.N: " << response << endl;
+
 
     close(sock);
     return true;
 }
 
-bool perform_port_knocking(const char *ip_string, const vector<uint16_t> &knock_sequence, uint32_t signature, const string &secret_phrase) {
-    // For each port in the knock sequence
-    for (uint16_t port : knock_sequence) {
+bool perform_port_knocking(const char *ip_string, size_t port, uint32_t group_signature, const string &secret_phrase) {
         // Create a UDP socket
-        int sock = socket(AF_INET, SOCK_DGRAM, 0);
-        if (sock < 0) {
-            perror("Error creating socket");
-            return false;
-        }
-
-        // Initialize server address
-        struct sockaddr_in server_address;
-        memset(&server_address, 0, sizeof(server_address));
-        server_address.sin_family = AF_INET;
-        server_address.sin_port = htons(port);
-        if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
-            perror("Invalid IP address");
-            close(sock);
-            return false;
-        }
-
-        // Prepare the message: 4 bytes of signature (network byte order) + secret phrase
-        uint32_t net_signature = htonl(signature);
-        size_t phrase_len = secret_phrase.length();
-        size_t message_len = sizeof(net_signature) + phrase_len;
-        uint8_t *message = new uint8_t[message_len];
-
-        memcpy(message, &net_signature, sizeof(net_signature));  // Copy the 4-byte signature
-        memcpy(message + sizeof(net_signature), secret_phrase.c_str(), phrase_len);  // Copy the secret phrase
-
-        // Send the message
-        ssize_t sent_bytes = sendto(sock, message, message_len, 0, 
-                                    (struct sockaddr *)&server_address, sizeof(server_address));
-        if (sent_bytes < 0) {
-            perror("Error sending knock");
-            delete[] message;
-            close(sock);
-            return false;
-        }
-
-        // Clean up
-        delete[] message;
-        close(sock);
-
-        // Add a small delay between knocks
-        usleep(500000);  // Sleep for 500 milliseconds
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        cerr << "Error creating socket" << endl;
+        return false;
     }
 
-    return true;
+    // Set socket timeout using setsockopt
+    struct timeval timeout;
+    timeout.tv_sec = 1;  // 2-second timeout
+    timeout.tv_usec = 0; // Clear the microseconds part
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        cerr << "Error setting socket timeout" << endl;
+        close(sock);
+        return false;
+    }
+
+    // Server address setup
+    struct sockaddr_in server_address;
+    memset(&server_address, 0, sizeof(server_address));
+    server_address.sin_family = AF_INET;
+    server_address.sin_port = htons(port);
+    if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
+        cerr << "Invalid IP address" << endl;
+        close(sock);
+        return false;
+    }
+
+    // Send the knock sequence to the server
+    
+    // Signature to network byte order
+    uint32_t signature_net_order = htonl(group_signature);
+    // Prepare phrase
+    size_t phrase_len = secret_phrase.length();
+
 }
