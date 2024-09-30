@@ -43,7 +43,7 @@ void hex_print(const char data[], size_t length); // TODO: REMOVE THIS LINE AND 
 uint16_t checksum(uint16_t *buf, int len);
 string secret_phrase;
 size_t secret_secret_port;
-size_t evil_port;
+size_t secret_evil_port;
 
 
 // Checksum calculator
@@ -481,6 +481,19 @@ bool evil_solver(const char *ip_string, size_t port, uint32_t signature) {
     // Clean up
     close(recv_sock);
     close(raw_sock);
+
+    // Make sure the response is correct
+    // Take the last 4 characters of the recv_buffer and place in secret_evil_port
+    if (recv_bytes >= 4) {
+        uint8_t temp_port[5];
+        memcpy(&temp_port, recv_buffer + recv_bytes - 4, 4);
+        temp_port[4] = '\0';
+        // Convert the last 4 characters to a port number
+        secret_evil_port = atoi(reinterpret_cast<const char*>(temp_port));
+    } else {
+        cerr << "Received message is too short to extract the last 4 bytes." << endl;
+        return false;
+    }
 
     return true;
 }
