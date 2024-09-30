@@ -26,25 +26,6 @@
 
 using namespace std;
 
- 
-
-string strip_quotes(const string& input) {
-    size_t start = 0;
-    size_t end = input.length() - 1;
-
-    // Move start to first alphanumeric character
-    while (start < input.length() && !isalnum(static_cast<unsigned char>(input[start]))) {
-        ++start;
-    }
-
-    // Move end to last alphanumeric character
-    while (end > start && !isalnum(static_cast<unsigned char>(input[end]))) {
-        --end;
-    }
-
-    return input.substr(start, end - start + 1);
-}
-
 class UDPSocket {
 public:
     int sock;
