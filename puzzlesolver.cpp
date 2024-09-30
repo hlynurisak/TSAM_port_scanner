@@ -30,17 +30,15 @@ struct port_response {
 };
 
 int  port_matcher(const char *ip_string, size_t port);
-port_response get_port_response(const char *ip_string, int port);
 bool secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret);
 bool evil_solver(const char *ip_string, size_t port, uint32_t signature);
 bool checksum_solver(const char *ip_string, size_t port, uint32_t signature);
 void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes);
 bool get_knock_sequence(const char *ip_string, uint16_t port, const string &secret_ports, vector<uint16_t> &knock_sequence);
 bool perform_port_knocking(const char *ip_string, const vector<uint16_t> &knock_sequence, uint32_t signature, const string &secret_phrase);
-
-void hex_print(const char data[], size_t length); // TODO: REMOVE THIS LINE AND THE FUNCTION ITSELF
-
+port_response get_port_response(const char *ip_string, int port);
 uint16_t checksum(uint16_t *buf, int len);
+
 string secret_phrase;
 size_t secret_secret_port;
 size_t secret_evil_port;
@@ -131,15 +129,17 @@ int main(int argc, char *argv[]) {
     while (!secret_solver(ip_string, secret_port, groupnum, group_secret)) {
         secret_solver(ip_string, secret_port, groupnum, group_secret);
     }
-    
+    cout << "Secret port solved. Got: " << secret_secret_port << endl;
     
     while (!evil_solver(ip_string, evil_port, group_signature)) {
         evil_solver(ip_string, evil_port, group_signature);
-    };
+    }
+    cout << "Evil port solved. Got: " << secret_evil_port << endl;
 
     while (!checksum_solver(ip_string, checksum_port, group_signature)) {
         checksum_solver(ip_string, checksum_port, group_signature);
     }
+    cout << "Checksum port solved. Got: " << secret_phrase << endl;
     
     return 0;
 
@@ -165,12 +165,6 @@ int main(int argc, char *argv[]) {
     cout << "Port knocking sequence completed successfully." << endl;
 
     return 0;
-};
-
-void hex_print(const char data[], size_t length) {
-    for (size_t i = 0; i < length; ++i) {
-        cout << hex << setw(2) << setfill('0') << (static_cast<unsigned int>(data[i]) & 0xFF) << " ";
-    };
 };
 
 // A simple string matcher function to determine the port
@@ -283,7 +277,11 @@ bool secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
     struct timeval timeout;
     timeout.tv_sec = 1;  // 2-second timeout
     timeout.tv_usec = 0; // Clear the microseconds part
-    
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        cerr << "Error setting socket timeout" << endl;
+        close(sock);
+        return false;
+    }
 
     // Server address setup
     struct sockaddr_in server_address;
@@ -438,8 +436,6 @@ bool evil_solver(const char *ip_string, size_t port, uint32_t signature) {
         close(raw_sock);
         return false;
     }
-       
-    cout << "Packet sent successfully to port " << port << "!" << endl;
 
     // Receive the response using a regular UDP socket
     int recv_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
