@@ -13,10 +13,24 @@
 #include <cerrno>
 #include <sys/time.h>
 #include <fcntl.h>
+
 #define BUFFER_SIZE 1024
+#define SECRET_PORT 1
+#define EVIL_PORT 2
+#define CHECKSUM_PORT 3
+#define EXPSTN_PORT 4
 
 using namespace std;
 
+// Struct to hold the response from a port for easier handling
+struct port_response {
+    int port;
+    bool is_open;
+    char *response;
+};
+
+int  port_matcher(const char *ip_string, size_t port);
+port_response get_port_response(const char *ip_string, int port);
 bool secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, uint32_t group_secret);
 bool evil_solver(const char *ip_string, size_t port, uint32_t signature);
 bool checksum_solver(const char *ip_string, size_t port, uint32_t signature);
@@ -27,8 +41,9 @@ bool perform_port_knocking(const char *ip_string, const vector<uint16_t> &knock_
 void hex_print(const char data[], size_t length); // TODO: REMOVE THIS LINE AND THE FUNCTION ITSELF
 
 uint16_t checksum(uint16_t *buf, int len);
-uint32_t group_signature = 0xe24e0054; 
-string secret_phrase = "Omae wa mou shindeiru";
+string secret_phrase;
+size_t secret_secret_port;
+size_t evil_port;
 
 
 // Checksum calculator
@@ -63,17 +78,48 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
     
-    // Parse arguments
+    // Parse ip address
     const char *ip_string = argv[1];
-    int port1 = atoi(argv[2]);
-    int port2 = atoi(argv[3]);
-    int port3 = atoi(argv[4]);
-    int port4 = atoi(argv[5]);
+    size_t secret_port   = 0;
+    size_t evil_port     = 0;
+    size_t checksum_port = 0;
+    size_t expstn_port   = 0;
 
-    size_t evil_port        = 4048;
-    size_t expstn_port      = 4066;
-    size_t secret_port      = 4059;
-    size_t signature_port   = 4047;
+    // Loop through all ports to check if they are open and responding
+    // while mapping them to variables
+    int found_ports = 0;
+    int tries = 0;
+
+    while (found_ports < 4 && tries < 10) {
+        for (int this_port = 2; this_port < 5; this_port++) {
+            cout << "Checking port " << argv[this_port] << endl;
+            size_t curr_port = port_matcher(ip_string, atoi(argv[this_port]));
+            if (curr_port == SECRET_PORT) {
+                secret_port = atoi(argv[this_port]);
+                found_ports++;
+            } else if (curr_port == EVIL_PORT) {
+                evil_port = atoi(argv[this_port]);
+                found_ports++;
+            } else if (curr_port == CHECKSUM_PORT) {
+                checksum_port = atoi(argv[this_port]);
+                found_ports++;
+            } else if (curr_port == EXPSTN_PORT) {
+                expstn_port = atoi(argv[this_port]);
+                found_ports++;
+            }
+        };
+    };
+
+    if (tries == 10) {
+        cerr << "Failed to find all ports" << endl;
+        return 1;
+    };
+    cout << "Found all ports" << endl;
+
+    evil_port        = 4048;
+    expstn_port      = 4066;
+    secret_port      = 4059;
+    checksum_port    = 4047;
 
     size_t secret_secret_port = 4025;
 
@@ -88,19 +134,18 @@ int main(int argc, char *argv[]) {
     }
     */
     
-    /*
+    
     while (!evil_solver(ip_string, evil_port, group_signature)) {
         evil_solver(ip_string, evil_port, group_signature);
     };
-    */
 
-    
-    while (!checksum_solver(ip_string, signature_port, group_signature)) {
-        checksum_solver(ip_string, signature_port, group_signature);
+    /* SOLVED
+    while (!checksum_solver(ip_string, checksum_port, group_signature)) {
+        checksum_solver(ip_string, checksum_port, group_signature);
     }
+    */
     
-
-   return 0;
+    return 0;
 
     // The secret phrase
     string secret_phrase = "Omae wa mou shindeiru";
@@ -124,13 +169,110 @@ int main(int argc, char *argv[]) {
     cout << "Port knocking sequence completed successfully." << endl;
 
     return 0;
-}
+};
 
 void hex_print(const char data[], size_t length) {
     for (size_t i = 0; i < length; ++i) {
         cout << hex << setw(2) << setfill('0') << (static_cast<unsigned int>(data[i]) & 0xFF) << " ";
+    };
+};
+
+// A simple string matcher function to determine the port
+int port_matcher(const char *ip_string, size_t port) {
+    port_response response = get_port_response(ip_string, port);
+    if (!response.is_open) {
+        return 0;
+    }
+    if (response.response == nullptr) {
+        return 0;
+    }
+    char first_chars[32];
+    strncpy(first_chars, response.response, 32);
+    first_chars[31] = '\0';
+    if (strcmp(first_chars, "Greetings from S.E.C.R.E.T (Se") == 0) {
+        return SECRET_PORT;
+    } else if (strcmp(first_chars, "The dark side of network progra") == 0) {
+        return EVIL_PORT;
+    } else if (strcmp(first_chars, "Send me a 4-byte message contai") == 0) {
+        return CHECKSUM_PORT;
+    } else if (strcmp(first_chars, "Greetings! I am E.X.P.S.T.N, wh") == 0) {
+        return EXPSTN_PORT;
+    } else {
+        return 0;
+    }
+    return 0;
+}
+
+// Taken from scanner.cpp
+port_response get_port_response(const char *ip_string, int port) {
+    port_response response;
+    response.port = port;
+    response.is_open = false;
+    response.response = nullptr;
+
+    // Create a UDP socket
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        cerr << "Error creating socket" << endl;
+        return response;
+    }
+
+    // Set socket timeout using setsockopt
+    struct timeval timeout;
+    timeout.tv_sec = 1;  // 1-second timeout
+    timeout.tv_usec = 0; // Clear the microseconds part
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        cerr << "Error setting socket timeout" << endl;
+        close(sock);
+        return response;
+    }
+
+    // Server address setup
+    struct sockaddr_in server_address;                                  // Initialize server address structure
+    memset(&server_address, 0, sizeof(server_address));                 // Clear the structure
+    server_address.sin_family = AF_INET;                                // Set address family to AF_INET
+    server_address.sin_port = htons(port);                              // Set port; use htons to convert to network byte order
+    if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) { // Convert IP address string to binary
+        cerr << "Invalid IP address" << endl;
+        close(sock);
+        return response;
+    }
+
+    // Send a test datagram
+    const char *message = "TSAM is the best!";
+    ssize_t sent_bytes = sendto(sock, message, strlen(message), 0,
+                                (struct sockaddr *)&server_address, sizeof(server_address));
+    if (sent_bytes < 0) {
+        // Handle sendto error
+        close(sock);
+        return response;
+    }
+
+    // Try to receive a response
+    char buffer[BUFFER_SIZE];
+    socklen_t addr_len = sizeof(server_address);
+    ssize_t recv_bytes = recvfrom(sock, buffer, BUFFER_SIZE, 0,
+                                  (struct sockaddr *)&server_address, &addr_len);
+
+    close(sock);  // Close the socket after use
+
+    if (recv_bytes > 0) {
+        // If there's a response then the port is open
+        if (recv_bytes < BUFFER_SIZE) {
+            buffer[recv_bytes] = '\0';      // Null-terminate the received data
+        } else {
+            buffer[BUFFER_SIZE - 1] = '\0'; // Null-terminate the received data
+        }
+        response.is_open = true;
+        response.response = strdup(buffer);
+        return response;
+    } else {
+        // If an error or nothing is received or the operation times out 
+        // then assume port is closed
+        return response;
     }
 }
+
 
 bool secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_t group_secret) {
     cout << "Solving the secret port..." << endl;

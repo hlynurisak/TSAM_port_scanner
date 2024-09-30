@@ -16,7 +16,7 @@ using namespace std;
 // Struct to hold the response from a port for easier handling
 struct port_response {
     int port;
-    bool open;
+    bool is_open;
     char *response;
 };
 
@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
     int low_port = atoi(argv[2]);
     int high_port = atoi(argv[3]);
 
-    // Verify port range
+    // Simple input validation
     if (low_port < 0 || high_port < 0 || low_port > high_port) {
         cerr << "Invalid port range" << endl;
         exit(1);
@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
     // Check ports in the provided range
     for (int port = low_port; port <= high_port; port++) {
         port_response response = get_port_response(ip_string, port);
-        if (response.open) {
+        if (response.is_open) {
             cout << ip_string << ":" << port << " OPEN" << endl;
             if (response.response != nullptr) {
                 cout << response.response << endl;
@@ -59,7 +59,7 @@ int main(int argc, char *argv[]) {
 port_response get_port_response(const char *ip_string, int port) {
     port_response response;
     response.port = port;
-    response.open = false;
+    response.is_open = false;
     response.response = nullptr;
 
     // Create a UDP socket
@@ -115,7 +115,7 @@ port_response get_port_response(const char *ip_string, int port) {
         } else {
             buffer[BUFFER_SIZE - 1] = '\0'; // Null-terminate the received data
         }
-        response.open = true;
+        response.is_open = true;
         response.response = strdup(buffer);
         return response;
     } else {
