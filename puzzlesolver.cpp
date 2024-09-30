@@ -89,14 +89,18 @@ int main(int argc, char *argv[]) {
     */
     
     /*
-    evil_solver(ip_string, evil_port, group_signature);
+    while (!evil_solver(ip_string, evil_port, group_signature)) {
+        evil_solver(ip_string, evil_port, group_signature);
+    };
     */
 
-    /*
+    
     while (!checksum_solver(ip_string, signature_port, group_signature)) {
         checksum_solver(ip_string, signature_port, group_signature);
     }
-    */
+    
+
+   return 0;
 
     // The secret phrase
     string secret_phrase = "Omae wa mou shindeiru";
@@ -434,7 +438,6 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
             inner_udph->uh_sport = htons(source_port);
             inner_udph->uh_dport = htons(port);
             inner_udph->uh_ulen = htons(sizeof(struct udphdr)); // UDP header length
-            inner_udph->uh_sum = 0; // Initialize checksum to zero
 
             // Create a pseudo-header for the calculation
             struct pseudo_header {
@@ -459,21 +462,20 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
             // Copy UDP header
             memcpy(pseudo_packet + sizeof(struct pseudo_header), inner_udph, ntohs(psh.udp_length));
 
-            // Calculate checksum
-            inner_udph->uh_sum = checksum((uint16_t *)pseudo_packet, pseudo_packet_len);
-
             // Change the source port until the checksum comes back the same
-            uint16_t original_checksum = ntohs(inner_udph->uh_sum);
-            if (original_checksum != required_udp_checksum) {
+            uint16_t current_checksum;
+            if (current_checksum != ntohs(required_udp_checksum)) {
                 bool checksum_matched = false;
-                for (uint16_t sport = 1024; sport <= 65535; sport++) {
-                    inner_udph->uh_sport = htons(sport);
+                for (uint32_t sport = 0; sport <= 65535; sport++) {
+                    // Try current port as source port
+                    inner_udph->uh_sport = sport;
 
-                    // Calculate new checksum
+                    // Calculate checksum
                     memcpy(pseudo_packet + sizeof(struct pseudo_header), inner_udph, ntohs(psh.udp_length));
-                    inner_udph->uh_sum = checksum((uint16_t *)pseudo_packet, pseudo_packet_len);
+                    current_checksum = checksum((uint16_t *)pseudo_packet, pseudo_packet_len);
 
-                    if (ntohs(inner_udph->uh_sum) == required_udp_checksum) {
+                    // Check if the checksum matches to the desired one
+                    if (current_checksum == ntohs(required_udp_checksum)) {
                         checksum_matched = true;
                         break;
                     }
@@ -485,6 +487,10 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
                     delete[] pseudo_packet;
                     close(sock);
                     return false;
+                }
+                else {
+                    // Set the checksum in the UDP header
+                    inner_udph->uh_sum = current_checksum;
                 }
             }
 
