@@ -9,9 +9,10 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <cstdlib>
+#include <vector>    
 #include <cerrno>
 #include <sys/time.h>
-
+#include <fcntl.h>
 #define BUFFER_SIZE 1024
 
 using namespace std;
@@ -20,10 +21,15 @@ bool secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, 
 bool evil_solver(const char *ip_string, size_t port, uint32_t signature);
 bool checksum_solver(const char *ip_string, size_t port, uint32_t signature);
 void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes);
+bool get_knock_sequence(const char *ip_string, uint16_t port, const std::string &secret_ports, std::vector<uint16_t> &knock_sequence);
+bool perform_port_knocking(const char *ip_string, const std::vector<uint16_t> &knock_sequence, uint32_t signature, const std::string &secret_phrase);
 
 void hex_print(const char data[], size_t length); // TODO: REMOVE THIS LINE AND THE FUNCTION ITSELF
 
 uint16_t checksum(uint16_t *buf, int len);
+uint32_t group_signature = 0xe24e0054; 
+std::string secret_phrase = "Omae wa mou shindeiru";
+
 
 // Checksum calculator
 uint16_t checksum(uint16_t *buf, int len) {
@@ -88,6 +94,26 @@ int main(int argc, char *argv[]) {
         checksum_solver(ip_string, signature_port, group_signature);
     }
     */
+      // The secret phrase
+    std::string secret_phrase = "Omae wa mou shindeiru";
+
+        // Parse arguments
+    std::string secret_ports = "4025,4094";  // The list of secret ports
+
+    // Step 1: Get the knock sequence from E.X.P.S.T.N
+    std::vector<uint16_t> knock_sequence;
+    if (!get_knock_sequence(ip_string, 4024, secret_ports, knock_sequence)) {
+        cerr << "Failed to get knock sequence from E.X.P.S.T.N." << endl;
+        return 1;
+    }
+
+    // Step 2: Perform the port knocking sequence
+    if (!perform_port_knocking(ip_string, knock_sequence, group_signature, secret_phrase)) {
+        cerr << "Failed to perform port knocking sequence." << endl;
+        return 1;
+    }
+
+    cout << "Port knocking sequence completed successfully." << endl;
 
     return 0;
 }
@@ -499,5 +525,128 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
     }
 
     close(sock);
+    return true;
+}
+#include <fcntl.h>  // Add this include at the top
+
+bool get_knock_sequence(const char *ip_string, uint16_t port, const std::string &secret_ports, std::vector<uint16_t> &knock_sequence) {
+    // Create a UDP socket
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        perror("Error creating socket");
+        return false;
+    }
+
+    // Initialize server address
+    struct sockaddr_in server_address;
+    memset(&server_address, 0, sizeof(server_address));
+    server_address.sin_family = AF_INET;
+    server_address.sin_port = htons(port);
+    if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
+        perror("Invalid IP address");
+        close(sock);
+        return false;
+    }
+
+    // Set socket timeout
+    struct timeval timeout;
+    timeout.tv_sec = 15;  // 15-second timeout
+    timeout.tv_usec = 0;  // Clear microseconds
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        perror("setsockopt failed");
+        close(sock);
+        return false;
+    }
+
+    // Send the list of secret ports (comma-separated)
+    std::cout << "Sending secret ports to E.X.P.S.T.N: [" << secret_ports << "]" << std::endl;
+    ssize_t sent_bytes = sendto(sock, secret_ports.c_str(), secret_ports.length(), 0, 
+                                (struct sockaddr *)&server_address, sizeof(server_address));
+    if (sent_bytes < 0) {
+        perror("Error sending secret ports to E.X.P.S.T.N.");
+        close(sock);
+        return false;
+    }
+
+    std::cout << "Sent " << sent_bytes << " bytes to E.X.P.S.T.N." << std::endl;
+
+    // Wait for the response from E.X.P.S.T.N with the knock sequence
+    char buffer[BUFFER_SIZE];
+    socklen_t addr_len = sizeof(server_address);
+    ssize_t recv_bytes = recvfrom(sock, buffer, BUFFER_SIZE - 1, 0, (struct sockaddr *)&server_address, &addr_len);
+    if (recv_bytes < 0) {
+        perror("Error receiving knock sequence from E.X.P.S.T.N.");
+        close(sock);
+        return false;
+    }
+
+    buffer[recv_bytes] = '\0';  // Null-terminate the received string
+    std::string response(buffer);
+    std::cout << "Received from E.X.P.S.T.N: [" << response << "]" << std::endl;
+
+    // Parse the knock sequence from the response
+    size_t pos = 0;
+    std::string token;
+    while ((pos = response.find(',')) != std::string::npos) {
+        token = response.substr(0, pos);
+        knock_sequence.push_back(static_cast<uint16_t>(std::stoi(token)));
+        response.erase(0, pos + 1);
+    }
+    if (!response.empty()) {
+        knock_sequence.push_back(static_cast<uint16_t>(std::stoi(response)));
+    }
+
+    close(sock);
+    return true;
+}
+
+bool perform_port_knocking(const char *ip_string, const std::vector<uint16_t> &knock_sequence, uint32_t signature, const std::string &secret_phrase) {
+    // For each port in the knock sequence
+    for (uint16_t port : knock_sequence) {
+        // Create a UDP socket
+        int sock = socket(AF_INET, SOCK_DGRAM, 0);
+        if (sock < 0) {
+            perror("Error creating socket");
+            return false;
+        }
+
+        // Initialize server address
+        struct sockaddr_in server_address;
+        memset(&server_address, 0, sizeof(server_address));
+        server_address.sin_family = AF_INET;
+        server_address.sin_port = htons(port);
+        if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
+            perror("Invalid IP address");
+            close(sock);
+            return false;
+        }
+
+        // Prepare the message: 4 bytes of signature (network byte order) + secret phrase
+        uint32_t net_signature = htonl(signature);
+        size_t phrase_len = secret_phrase.length();
+        size_t message_len = sizeof(net_signature) + phrase_len;
+        uint8_t *message = new uint8_t[message_len];
+
+        memcpy(message, &net_signature, sizeof(net_signature));  // Copy the 4-byte signature
+        memcpy(message + sizeof(net_signature), secret_phrase.c_str(), phrase_len);  // Copy the secret phrase
+
+        // Send the message
+        ssize_t sent_bytes = sendto(sock, message, message_len, 0, 
+                                    (struct sockaddr *)&server_address, sizeof(server_address));
+        if (sent_bytes < 0) {
+            perror("Error sending knock");
+            delete[] message;
+            close(sock);
+            return false;
+        }
+
+        // Clean up
+        delete[] message;
+        close(sock);
+
+        // Add a small delay between knocks
+        usleep(500000);  // Sleep for 500 milliseconds
+    }
+
     return true;
 }
