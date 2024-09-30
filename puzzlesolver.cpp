@@ -677,6 +677,16 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
             if (recv_bytes > 0) {
                 buffer[recv_bytes] = '\0';  // Null-terminate the received string
                 cout << "Received: " << buffer << endl;
+
+                 // Find the secret phrase in the response
+                string response(buffer);
+                size_t pos = response.find("phrase: ");
+                if (pos != string::npos) {
+                    pos += 9;
+                    // Extract the port number and save to global variable
+                    secret_phrase = response.substr(pos, recv_bytes);
+                    cout << "Secret phrase: " << secret_phrase << endl;
+                }
             } else {
                 cerr << "Error receiving response: " << strerror(errno) << endl;
                 close(sock);
