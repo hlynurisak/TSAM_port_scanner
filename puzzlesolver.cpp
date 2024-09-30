@@ -28,7 +28,7 @@ using namespace std;
 
  
 
-std::string strip_quotes(const std::string& input) {
+string strip_quotes(const string& input) {
     size_t start = 0;
     size_t end = input.length() - 1;
 
@@ -55,7 +55,7 @@ public:
     UDPSocket() {
         sock = socket(AF_INET, SOCK_DGRAM, 0);
         if (sock < 0) {
-            throw std::runtime_error("Error creating UDP socket");
+            throw runtime_error("Error creating UDP socket");
         }
         addr_len = sizeof(struct sockaddr_in);
     }
@@ -71,7 +71,7 @@ public:
         dest_addr.sin_port = htons(port);
 
         if (inet_pton(AF_INET, ip_string, &dest_addr.sin_addr) <= 0) {
-            throw std::runtime_error("Invalid IP address");
+            throw runtime_error("Invalid IP address");
         }
     }
     // Method to send data
@@ -91,7 +91,7 @@ public:
         timeout.tv_usec = microseconds;
 
         if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-            throw std::runtime_error("Error setting socket timeout");
+            throw runtime_error("Error setting socket timeout");
         }
     }
 };
@@ -739,7 +739,7 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
                 if (pos != string::npos) {
                     pos += 9;
                     // Extract the port number and save to global variable
-                    secret_phrase = response.substr(pos, recv_bytes);
+                    secret_phrase = response.substr(pos+1, 21);
                     cout << "Secret phrase: " << secret_phrase << endl;
                 }
             } else {
@@ -835,32 +835,20 @@ bool knock_and_perform(const char *ip_string, uint16_t port, uint32_t signature,
 
         // Prepare the message (signature + secret phrase)
 
-        std::cout << "Before stripping: " << secret_phrase << std::endl;
-        std::string stripped_secret_phrase = strip_quotes(secret_phrase); // Ensure quotes are stripped
-        std::cout << "After stripping: " << stripped_secret_phrase << std::endl;        
-        size_t message_len = stripped_secret_phrase.length();
+        cout << "Secret phrase: " << secret_phrase << endl;   
+        size_t message_len = secret_phrase.length();
         uint32_t net_signature = (signature);
         size_t buffer_size = 4 + message_len;
         char* send_buffer_message = new char[buffer_size];
 
         // Copy the signature (4 bytes) and secret phrase into the send buffer
         memcpy(send_buffer_message, &net_signature, sizeof(net_signature));
-        memcpy(send_buffer_message + sizeof(net_signature), stripped_secret_phrase.c_str(), message_len);
-
-
-        // Print the message in hex before sending
-        cout << "Message contents (hex): ";
-        for (size_t i = 0; i < buffer_size; ++i) {
-            printf("%02X ", (unsigned char)send_buffer_message[i]);
-        }
-        cout << endl;
-
-
+        memcpy(send_buffer_message + sizeof(net_signature), secret_phrase.c_str(), message_len);
 
         // Send the message
         ssize_t knock_sent_len = udp_sock.send_data(send_buffer_message, buffer_size);
         if (knock_sent_len < 0) {
-            cerr << "[perform_port_knocking] Error sending to port " << current_port << endl;
+            cerr << "Error sending to port " << current_port << endl;
             delete[] send_buffer_message;  // Free allocated memory
             continue;
         }
@@ -870,14 +858,14 @@ bool knock_and_perform(const char *ip_string, uint16_t port, uint32_t signature,
         ssize_t knock_recv_len = udp_sock.receive_data(buffer, sizeof(buffer) - 1);
 
         if (knock_recv_len < 0) {
-            perror("[perform_port_knocking] Error receiving from port");
+            perror("Error receiving from port");
             delete[] send_buffer_message;  // Free allocated memory
             continue;
         }
 
         // Null-terminate the received data
         buffer[knock_recv_len] = '\0';
-        cout << "[perform_port_knocking] Received from Port " << current_port << ": " << buffer << endl;
+        cout << "Received from Port " << current_port << ": " << buffer << endl;
 
         // Clean up
         delete[] send_buffer_message;  // Free allocated memory
