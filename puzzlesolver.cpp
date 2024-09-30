@@ -34,7 +34,7 @@ bool secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, 
 bool evil_solver(const char *ip_string, size_t port, uint32_t signature);
 bool checksum_solver(const char *ip_string, size_t port, uint32_t signature);
 void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes);
-bool get_knock_sequence(const char *ip_string, uint16_t port, const string &secret_ports, vector<uint16_t> &knock_sequence);
+bool knock_solver(const char *ip_string, uint16_t port, uint32_t signature);
 bool perform_port_knocking(const char *ip_string, const vector<uint16_t> &knock_sequence, uint32_t signature, const string &secret_phrase);
 port_response get_port_response(const char *ip_string, int port);
 uint16_t checksum(uint16_t *buf, int len);
@@ -114,6 +114,7 @@ int main(int argc, char *argv[]) {
     };
     cout << "Found all ports" << endl;
 
+    // TODO REMOVE BEFORE HANDIN
     evil_port        = 4048;
     expstn_port      = 4066;
     secret_port      = 4059;
@@ -140,25 +141,10 @@ int main(int argc, char *argv[]) {
         checksum_solver(ip_string, checksum_port, group_signature);
     }
     cout << "Checksum port solved. Got: " << secret_phrase << endl;
-    
-    return 0;
 
-    // The secret phrase
-    string secret_phrase = "Omae wa mou shindeiru";
 
-    // Parse arguments
-    string secret_ports = "4025,4094";  // The list of secret ports
-
-    // Step 1: Get the knock sequence from E.X.P.S.T.N
-    vector<uint16_t> knock_sequence;
-    if (!get_knock_sequence(ip_string, 4024, secret_ports, knock_sequence)) {
+    if (!knock_solver(ip_string, expstn_port, group_signature)) {
         cerr << "Failed to get knock sequence from E.X.P.S.T.N." << endl;
-        return 1;
-    }
-
-    // Step 2: Perform the port knocking sequence
-    if (!perform_port_knocking(ip_string, knock_sequence, group_signature, secret_phrase)) {
-        cerr << "Failed to perform port knocking sequence." << endl;
         return 1;
     }
 
@@ -703,40 +689,44 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
     close(sock);
     return true;
 }
-#include <fcntl.h>  // Add this include at the top
 
-bool get_knock_sequence(const char *ip_string, uint16_t port, const string &secret_ports, vector<uint16_t> &knock_sequence) {
+bool knock_solver(const char *ip_string, uint16_t port, uint32_t signature) {
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
-        perror("Error creating socket");
+        cerr << "Error creating socket" << endl;
         return false;
     }
 
-    // Initialize server address
+    // Set socket timeout using setsockopt
+    struct timeval timeout;
+    timeout.tv_sec = 1;  // 2-second timeout
+    timeout.tv_usec = 0; // Clear the microseconds part
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        cerr << "Error setting socket timeout" << endl;
+        close(sock);
+        return false;
+    }
+
+    // Server address setup
     struct sockaddr_in server_address;
     memset(&server_address, 0, sizeof(server_address));
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(port);
     if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
-        perror("Invalid IP address");
+        cerr << "Invalid IP address" << endl;
         close(sock);
         return false;
     }
 
-    // Set socket timeout
-    struct timeval timeout;
-    timeout.tv_sec = 15;  // 15-second timeout
-    timeout.tv_usec = 0;  // Clear microseconds
-    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        perror("setsockopt failed");
-        close(sock);
-        return false;
-    }
+    char secret_ports[10];
+    cout << "Secret port: " << secret_secret_port << endl;
+    cout << "Evil port: " << secret_evil_port << endl;
+    snprintf(secret_ports, sizeof(secret_ports), "%zu,%zu", secret_secret_port, secret_evil_port);
 
     // Send the list of secret ports (comma-separated)
-    cout << "Sending secret ports to E.X.P.S.T.N: [" << secret_ports << "]" << endl;
-    ssize_t sent_bytes = sendto(sock, secret_ports.c_str(), secret_ports.length(), 0, 
+    cout << "Sending secret ports to E.X.P.S.T.N: " << secret_ports << "!" << endl;
+    ssize_t sent_bytes = sendto(sock, &secret_ports, sizeof(secret_ports), 0, 
                                 (struct sockaddr *)&server_address, sizeof(server_address));
     if (sent_bytes < 0) {
         perror("Error sending secret ports to E.X.P.S.T.N.");
@@ -759,18 +749,6 @@ bool get_knock_sequence(const char *ip_string, uint16_t port, const string &secr
     buffer[recv_bytes] = '\0';  // Null-terminate the received string
     string response(buffer);
     cout << "Received from E.X.P.S.T.N: [" << response << "]" << endl;
-
-    // Parse the knock sequence from the response
-    size_t pos = 0;
-    string token;
-    while ((pos = response.find(',')) != string::npos) {
-        token = response.substr(0, pos);
-        knock_sequence.push_back(static_cast<uint16_t>(stoi(token)));
-        response.erase(0, pos + 1);
-    }
-    if (!response.empty()) {
-        knock_sequence.push_back(static_cast<uint16_t>(stoi(response)));
-    }
 
     close(sock);
     return true;
