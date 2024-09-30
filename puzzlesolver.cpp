@@ -21,14 +21,14 @@ bool secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, 
 bool evil_solver(const char *ip_string, size_t port, uint32_t signature);
 bool checksum_solver(const char *ip_string, size_t port, uint32_t signature);
 void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes);
-bool get_knock_sequence(const char *ip_string, uint16_t port, const std::string &secret_ports, std::vector<uint16_t> &knock_sequence);
-bool perform_port_knocking(const char *ip_string, const std::vector<uint16_t> &knock_sequence, uint32_t signature, const std::string &secret_phrase);
+bool get_knock_sequence(const char *ip_string, uint16_t port, const string &secret_ports, vector<uint16_t> &knock_sequence);
+bool perform_port_knocking(const char *ip_string, const vector<uint16_t> &knock_sequence, uint32_t signature, const string &secret_phrase);
 
 void hex_print(const char data[], size_t length); // TODO: REMOVE THIS LINE AND THE FUNCTION ITSELF
 
 uint16_t checksum(uint16_t *buf, int len);
 uint32_t group_signature = 0xe24e0054; 
-std::string secret_phrase = "Omae wa mou shindeiru";
+string secret_phrase = "Omae wa mou shindeiru";
 
 
 // Checksum calculator
@@ -92,18 +92,20 @@ int main(int argc, char *argv[]) {
     evil_solver(ip_string, evil_port, group_signature);
     */
 
+    /*
     while (!checksum_solver(ip_string, signature_port, group_signature)) {
         checksum_solver(ip_string, signature_port, group_signature);
     }
     */
-      // The secret phrase
-    std::string secret_phrase = "Omae wa mou shindeiru";
 
-        // Parse arguments
-    std::string secret_ports = "4025,4094";  // The list of secret ports
+    // The secret phrase
+    string secret_phrase = "Omae wa mou shindeiru";
+
+    // Parse arguments
+    string secret_ports = "4025,4094";  // The list of secret ports
 
     // Step 1: Get the knock sequence from E.X.P.S.T.N
-    std::vector<uint16_t> knock_sequence;
+    vector<uint16_t> knock_sequence;
     if (!get_knock_sequence(ip_string, 4024, secret_ports, knock_sequence)) {
         cerr << "Failed to get knock sequence from E.X.P.S.T.N." << endl;
         return 1;
@@ -531,7 +533,7 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
 }
 #include <fcntl.h>  // Add this include at the top
 
-bool get_knock_sequence(const char *ip_string, uint16_t port, const std::string &secret_ports, std::vector<uint16_t> &knock_sequence) {
+bool get_knock_sequence(const char *ip_string, uint16_t port, const string &secret_ports, vector<uint16_t> &knock_sequence) {
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
@@ -561,7 +563,7 @@ bool get_knock_sequence(const char *ip_string, uint16_t port, const std::string 
     }
 
     // Send the list of secret ports (comma-separated)
-    std::cout << "Sending secret ports to E.X.P.S.T.N: [" << secret_ports << "]" << std::endl;
+    cout << "Sending secret ports to E.X.P.S.T.N: [" << secret_ports << "]" << endl;
     ssize_t sent_bytes = sendto(sock, secret_ports.c_str(), secret_ports.length(), 0, 
                                 (struct sockaddr *)&server_address, sizeof(server_address));
     if (sent_bytes < 0) {
@@ -570,7 +572,7 @@ bool get_knock_sequence(const char *ip_string, uint16_t port, const std::string 
         return false;
     }
 
-    std::cout << "Sent " << sent_bytes << " bytes to E.X.P.S.T.N." << std::endl;
+    cout << "Sent " << sent_bytes << " bytes to E.X.P.S.T.N." << endl;
 
     // Wait for the response from E.X.P.S.T.N with the knock sequence
     char buffer[BUFFER_SIZE];
@@ -583,26 +585,26 @@ bool get_knock_sequence(const char *ip_string, uint16_t port, const std::string 
     }
 
     buffer[recv_bytes] = '\0';  // Null-terminate the received string
-    std::string response(buffer);
-    std::cout << "Received from E.X.P.S.T.N: [" << response << "]" << std::endl;
+    string response(buffer);
+    cout << "Received from E.X.P.S.T.N: [" << response << "]" << endl;
 
     // Parse the knock sequence from the response
     size_t pos = 0;
-    std::string token;
-    while ((pos = response.find(',')) != std::string::npos) {
+    string token;
+    while ((pos = response.find(',')) != string::npos) {
         token = response.substr(0, pos);
-        knock_sequence.push_back(static_cast<uint16_t>(std::stoi(token)));
+        knock_sequence.push_back(static_cast<uint16_t>(stoi(token)));
         response.erase(0, pos + 1);
     }
     if (!response.empty()) {
-        knock_sequence.push_back(static_cast<uint16_t>(std::stoi(response)));
+        knock_sequence.push_back(static_cast<uint16_t>(stoi(response)));
     }
 
     close(sock);
     return true;
 }
 
-bool perform_port_knocking(const char *ip_string, const std::vector<uint16_t> &knock_sequence, uint32_t signature, const std::string &secret_phrase) {
+bool perform_port_knocking(const char *ip_string, const vector<uint16_t> &knock_sequence, uint32_t signature, const string &secret_phrase) {
     // For each port in the knock sequence
     for (uint16_t port : knock_sequence) {
         // Create a UDP socket
