@@ -128,22 +128,18 @@ int main(int argc, char *argv[]) {
     uint32_t group_challenge = 0xb99ec33e;
     uint32_t group_signature = 0xe24e0054;
 
-    /*
     while (!secret_solver(ip_string, secret_port, groupnum, group_secret)) {
         secret_solver(ip_string, secret_port, groupnum, group_secret);
     }
-    */
     
     
     while (!evil_solver(ip_string, evil_port, group_signature)) {
         evil_solver(ip_string, evil_port, group_signature);
     };
 
-    /* SOLVED
     while (!checksum_solver(ip_string, checksum_port, group_signature)) {
         checksum_solver(ip_string, checksum_port, group_signature);
     }
-    */
     
     return 0;
 
@@ -350,6 +346,17 @@ bool secret_solver(const char *ip_string, size_t port, uint8_t groupnum, uint32_
     if (recv_bytes > 0) {
         buffer[recv_bytes] = '\0';  // Null-terminate the received string
         cout << "Received: " << buffer << endl;
+
+        // Find the port number in the response
+        string response(buffer);
+        size_t pos = response.find("port: ");
+        if (pos != string::npos) {
+            pos += 6;
+            // Extract the port number and save to global variable
+            secret_secret_port = stoi(response.substr(pos, pos + 4));
+        } else {
+            cerr << "Port not found in response" << endl;
+        }
     } else {
         cerr << "Error receiving port" << endl;
         return false;
@@ -474,6 +481,17 @@ bool evil_solver(const char *ip_string, size_t port, uint32_t signature) {
     if (recv_bytes > 0) {
         recv_buffer[recv_bytes] = '\0';
         cout << "Received: " << recv_buffer << endl;
+        
+        // Find the port number in the response
+        string response(recv_buffer);
+        size_t pos = response.find("port: ");
+        if (pos != string::npos) {
+            pos += 6;
+            // Extract the port number and save to global variable
+            secret_evil_port = stoi(response.substr(pos, pos + 4));
+        } else {
+            cerr << "Port not found in response" << endl;
+        }
     } else {
         perror("recvfrom failed");
     }
@@ -481,19 +499,6 @@ bool evil_solver(const char *ip_string, size_t port, uint32_t signature) {
     // Clean up
     close(recv_sock);
     close(raw_sock);
-
-    // Make sure the response is correct
-    // Take the last 4 characters of the recv_buffer and place in secret_evil_port
-    if (recv_bytes >= 4) {
-        uint8_t temp_port[5];
-        memcpy(&temp_port, recv_buffer + recv_bytes - 4, 4);
-        temp_port[4] = '\0';
-        // Convert the last 4 characters to a port number
-        secret_evil_port = atoi(reinterpret_cast<const char*>(temp_port));
-    } else {
-        cerr << "Received message is too short to extract the last 4 bytes." << endl;
-        return false;
-    }
 
     return true;
 }
