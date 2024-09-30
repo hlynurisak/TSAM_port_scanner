@@ -35,7 +35,7 @@ bool secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, 
 bool evil_solver(const char *ip_string, size_t port, uint32_t signature);
 bool checksum_solver(const char *ip_string, size_t port, uint32_t signature);
 bool knock_solver(const char *ip_string, uint16_t port, uint32_t signature);
-bool perform_port_knocking(const char *ip_string, size_t port, uint32_t group_signature, string &secret_phrase);
+bool perform_port_knocking(int sock, struct sockaddr_in server_address, size_t port, uint32_t group_signature);
 port_response get_port_response(const char *ip_string, int port);
 uint16_t checksum(uint16_t *buf, int len);
 
@@ -781,7 +781,7 @@ bool knock_solver(const char *ip_string, uint16_t port, uint32_t signature) {
     cout << endl;
 
     for (size_t this_port : ports) {
-        bool succ = perform_port_knocking(ip_string, this_port, signature, secret_phrase);
+        bool succ = perform_port_knocking(sock, server_address, this_port, signature);
         if (!succ) {
             cerr << "Failed to knock on port " << this_port << endl;
             close(sock);
@@ -792,35 +792,8 @@ bool knock_solver(const char *ip_string, uint16_t port, uint32_t signature) {
     return true;
 }
 
-bool perform_port_knocking(const char *ip_string, size_t port, uint32_t group_signature, string &secret_phrase) {
+bool perform_port_knocking(int sock, struct sockaddr_in server_address, size_t port, uint32_t group_signature) {
     cout << "Knock, knock, knocking on heaven's door ... " << endl;
-    // Create a UDP socket
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) {
-        cerr << "Error creating socket" << endl;
-        return false;
-    }
-
-    // Set socket timeout using setsockopt
-    struct timeval timeout;
-    timeout.tv_sec = 2;  // 2-second timeout
-    timeout.tv_usec = 0; // Clear the microseconds part
-    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        cerr << "Error setting socket timeout" << endl;
-        close(sock);
-        return false;
-    }
-
-    // Server address setup
-    struct sockaddr_in server_address;
-    memset(&server_address, 0, sizeof(server_address));
-    server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(port);
-    if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
-        cerr << "Invalid IP address" << endl;
-        close(sock);
-        return false;
-    }
 
     // Send the knock sequence to the server
     // Signature to network byte order
@@ -835,6 +808,8 @@ bool perform_port_knocking(const char *ip_string, size_t port, uint32_t group_si
     memcpy(msg, &signature_net_order, sizeof(signature_net_order));
     memcpy(msg + 4, phrase, phrase_len);
 
+    // Set current port and send knock
+    server_address.sin_port = htons(port);
     ssize_t sent_bytes = sendto(sock, msg, sizeof(msg), 0,
                                         (struct sockaddr *) &server_address, sizeof(server_address));
     if (sent_bytes < 0) {
@@ -846,15 +821,12 @@ bool perform_port_knocking(const char *ip_string, size_t port, uint32_t group_si
     char buffer[BUFFER_SIZE];
     socklen_t addr_len = sizeof(server_address);
     ssize_t recv_bytes = recvfrom(sock, buffer, BUFFER_SIZE - 1, 0, (struct sockaddr *)&server_address, &addr_len);
-    if (recv_bytes < 0) {
-        perror("Error receiving response from server");
-        close(sock);
-        return false;
+    cout << "Received " << recv_bytes << " bytes from port " << port << endl;
+
+    if (recv_bytes > 0) {
+        buffer[recv_bytes] = '\0';  // Null-terminate the received string
+        string response(buffer);
+        cout << "Received from port " << port << ": " << response << endl;
     }
-
-    buffer[recv_bytes] = '\0';  // Null-terminate the received string
-    string response(buffer);
-    cout << "Received from port " << port << ": " << response << endl;
-
     return true;
 }
