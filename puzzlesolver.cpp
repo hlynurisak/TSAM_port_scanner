@@ -14,14 +14,88 @@
 #include <sys/time.h>
 #include <fcntl.h>
 #include <list>
+#include <algorithm> //for stripping
+#include <cctype>   //for stripping
 
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 2048
 #define SECRET_PORT 1
 #define EVIL_PORT 2
 #define CHECKSUM_PORT 3
 #define EXPSTN_PORT 4
 
+
 using namespace std;
+
+ 
+
+std::string strip_quotes(const std::string& input) {
+    size_t start = 0;
+    size_t end = input.length() - 1;
+
+    // Move start to first alphanumeric character
+    while (start < input.length() && !isalnum(static_cast<unsigned char>(input[start]))) {
+        ++start;
+    }
+
+    // Move end to last alphanumeric character
+    while (end > start && !isalnum(static_cast<unsigned char>(input[end]))) {
+        --end;
+    }
+
+    return input.substr(start, end - start + 1);
+}
+
+class UDPSocket {
+public:
+    int sock;
+    struct sockaddr_in dest_addr;
+    struct sockaddr_in recv_addr;
+    socklen_t addr_len;
+
+    UDPSocket() {
+        sock = socket(AF_INET, SOCK_DGRAM, 0);
+        if (sock < 0) {
+            throw std::runtime_error("Error creating UDP socket");
+        }
+        addr_len = sizeof(struct sockaddr_in);
+    }
+
+    ~UDPSocket() {
+        close(sock);
+    }
+
+    // Method to set the destination port and address
+    void set_address(const char *ip_string, uint16_t port) {
+        memset(&dest_addr, 0, sizeof(dest_addr));
+        dest_addr.sin_family = AF_INET;
+        dest_addr.sin_port = htons(port);
+
+        if (inet_pton(AF_INET, ip_string, &dest_addr.sin_addr) <= 0) {
+            throw std::runtime_error("Invalid IP address");
+        }
+    }
+    // Method to send data
+    ssize_t send_data(const char *buffer, size_t buffer_size) {
+        return sendto(sock, buffer, buffer_size, 0, (struct sockaddr *) &dest_addr, sizeof(dest_addr));
+    }
+
+    // Method to receive data
+    ssize_t receive_data(char *buffer, size_t buffer_size) {
+        return recvfrom(sock, buffer, buffer_size, 0, (struct sockaddr *) &recv_addr, &addr_len);
+    }
+
+    // Method to set socket timeout
+    void set_timeout(int seconds, int microseconds = 0) {
+        struct timeval timeout;
+        timeout.tv_sec = seconds;
+        timeout.tv_usec = microseconds;
+
+        if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+            throw std::runtime_error("Error setting socket timeout");
+        }
+    }
+};
+
 
 // Struct to hold the response from a port for easier handling
 struct port_response {
@@ -35,8 +109,7 @@ bool secret_solver(const char *ip_string, size_t secret_port, uint8_t groupnum, 
 bool evil_solver(const char *ip_string, size_t port, uint32_t signature);
 bool checksum_solver(const char *ip_string, size_t port, uint32_t signature);
 void second_checksum_solver(const char *ip_string, size_t port, uint8_t *last_six_bytes);
-bool knock_solver(const char *ip_string, uint16_t port, uint32_t signature);
-bool perform_port_knocking(const char *ip_string, const vector<uint16_t> &knock_sequence, uint32_t signature, const string &secret_phrase);
+bool knock_and_perform(const char *ip_string, uint16_t port, uint32_t signature, uint16_t secret_secret_port, uint16_t secret_evil_port, const string &secret_phrase);
 port_response get_port_response(const char *ip_string, int port);
 uint16_t checksum(uint16_t *buf, int len);
 
@@ -84,8 +157,7 @@ int main(int argc, char *argv[]) {
     size_t checksum_port = 0;
     size_t expstn_port   = 0;
 
-    // Loop through all ports to check if they are open and responding
-    // while mapping them to variables
+    // Loop through all ports to check if they are open and responding, while mapping them to variables
     int found_ports = 0;
     int tries = 0;
 
@@ -144,13 +216,13 @@ int main(int argc, char *argv[]) {
     cout << "Checksum port solved. Got: " << secret_phrase << endl;
 
 
-    if (!knock_solver(ip_string, expstn_port, group_signature)) {
-        cerr << "Failed to get knock sequence from E.X.P.S.T.N." << endl;
-        return 1;
+    vector<uint16_t> knock_sequence;
+
+    if (knock_and_perform(ip_string, expstn_port, group_signature, secret_secret_port, secret_evil_port, secret_phrase)) {
+        cout << "Port knocking and message sending completed successfully." << endl;
+    } else {
+        cout << "Port knocking or message sending failed." << endl;
     }
-
-    cout << "Port knocking sequence completed successfully." << endl;
-
     return 0;
 };
 
@@ -381,7 +453,7 @@ bool evil_solver(const char *ip_string, size_t port, uint32_t signature) {
     ip_hdr->ip_tos = 0;              // Type of service
     ip_hdr->ip_len = (sizeof(struct ip) + sizeof(struct udphdr) + sizeof(signature)); // Total length
     ip_hdr->ip_id = htons(54321);     // Random identifier
-    ip_hdr->ip_off = (0x8000);   // Evil bit set (0x8000 means "Don't Fragment" + Evil Bit)
+    ip_hdr->ip_off = (0x8000);   // Evil bit set (Don't Fragment + Evil Bit)
     ip_hdr->ip_ttl = 64;             // Time to live
     ip_hdr->ip_p = IPPROTO_UDP;      // Protocol (UDP)
     ip_hdr->ip_src.s_addr = INADDR_ANY; // Autofill source IP
@@ -691,7 +763,7 @@ bool checksum_solver(const char *ip_string, size_t port, uint32_t signature) {
     return true;
 }
 
-bool knock_solver(const char *ip_string, uint16_t port, uint32_t signature) {
+bool knock_and_perform(const char *ip_string, uint16_t port, uint32_t signature, uint16_t secret_secret_port, uint16_t secret_evil_port, const string &secret_phrase) {
     // Create a UDP socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
@@ -701,8 +773,8 @@ bool knock_solver(const char *ip_string, uint16_t port, uint32_t signature) {
 
     // Set socket timeout using setsockopt
     struct timeval timeout;
-    timeout.tv_sec = 1;  // 2-second timeout
-    timeout.tv_usec = 0; // Clear the microseconds part
+    timeout.tv_sec = 5;  // 5-second timeout
+    timeout.tv_usec = 0;
     if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
         cerr << "Error setting socket timeout" << endl;
         close(sock);
@@ -720,205 +792,97 @@ bool knock_solver(const char *ip_string, uint16_t port, uint32_t signature) {
         return false;
     }
 
+    // Send secret ports to the oracle
     char secret_ports[10];
-    cout << "Secret port: " << secret_secret_port << endl;
-    cout << "Evil port: " << secret_evil_port << endl;
-    snprintf(secret_ports, sizeof(secret_ports), "%zu,%zu", secret_secret_port, secret_evil_port);
-
-    // Send the list of secret ports (comma-separated)
-    cout << "Sending secret ports to E.X.P.S.T.N: " << secret_ports << "!" << endl;
-    ssize_t sent_bytes = sendto(sock, &secret_ports, sizeof(secret_ports), 0, 
+    snprintf(secret_ports, sizeof(secret_ports), "%u,%u", secret_secret_port, secret_evil_port);
+    ssize_t sent_bytes = sendto(sock, secret_ports, sizeof(secret_ports), 0, 
                                 (struct sockaddr *)&server_address, sizeof(server_address));
     if (sent_bytes < 0) {
-        perror("Error sending secret ports to E.X.P.S.T.N.");
+        perror("Error sending secret ports");
         close(sock);
         return false;
     }
 
-    cout << "Sent " << sent_bytes << " bytes to E.X.P.S.T.N." << endl;
-
-    // Wait for the response from E.X.P.S.T.N with the knock sequence
+    // Receive the knock sequence
     char buffer[BUFFER_SIZE];
     socklen_t addr_len = sizeof(server_address);
     ssize_t recv_bytes = recvfrom(sock, buffer, BUFFER_SIZE - 1, 0, (struct sockaddr *)&server_address, &addr_len);
     if (recv_bytes < 0) {
-        perror("Error receiving knock sequence from E.X.P.S.T.N.");
+        perror("Error receiving knock sequence");
         close(sock);
         return false;
     }
 
     buffer[recv_bytes] = '\0';  // Null-terminate the received string
     string response(buffer);
-    cout << "Received from E.X.P.S.T.N: " << response << endl;
 
-    // Parse the received knock sequence
-    list<size_t> ports;
-    bool done = false;
-    int cur = 0;
-    size_t curr_port = 0;
-    while (!done) {
-        if (isdigit(response[cur])) {
-            curr_port = curr_port * 10 + atoi(&response[cur]);
-            ports.push_back(curr_port);
-            curr_port = 0;
-            cur++;
-        } else {
-            ports.push_back(curr_port);
-            done = true;
-        }
-        while (response[cur] != ',') {
-            if (!isdigit(response[cur])) {
-                done = true;
-                break;
-            }
-            cur++;
-        }
-        cur++;
+    // Parse knock sequence
+    vector<uint16_t> knock_sequence;
+    size_t pos = 0;
+    while ((pos = response.find(',')) != string::npos) {
+        knock_sequence.push_back(stoi(response.substr(0, pos)));
+        response.erase(0, pos + 1);
     }
-    cout << "Parsed ports: ";
-    for (int num : ports) {
-        cout << num << " ";
-    }
-    cout << endl;
-}
+    knock_sequence.push_back(stoi(response));
 
-bool perform_port_knocking(const char *ip_string, size_t port, uint32_t group_signature, const string &secret_phrase) {
-        // Create a UDP socket
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) {
-        cerr << "Error creating socket" << endl;
-        return false;
-    }
+    // Perform knocking
+    UDPSocket udp_sock;
+    udp_sock.set_timeout(5);  // Increased timeout to 5 seconds
 
-    // Set socket timeout using setsockopt
-    struct timeval timeout;
-    timeout.tv_sec = 1;  // 2-second timeout
-    timeout.tv_usec = 0; // Clear the microseconds part
-    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        cerr << "Error setting socket timeout" << endl;
-        close(sock);
-        return false;
-    }
+    for (size_t port_index = 0; port_index < knock_sequence.size(); ++port_index) {
+        uint16_t current_port = knock_sequence[port_index];
+        udp_sock.set_address(ip_string, current_port);
 
-    // Server address setup
-    struct sockaddr_in server_address;
-    memset(&server_address, 0, sizeof(server_address));
-    server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(port);
-    if (inet_pton(AF_INET, ip_string, &server_address.sin_addr) <= 0) {
-        cerr << "Invalid IP address" << endl;
-        close(sock);
-        return false;
-    }
+        // Prepare the message (signature + secret phrase)
 
-    // Send the knock sequence to the server
-    
-    // Signature to network byte order
-    uint32_t signature_net_order = htonl(group_signature);
-    // Prepare phrase
-    size_t phrase_len = secret_phrase.length();
-
-}
-
-/*
-// Receiving the list of ports to knock on from the oracle
-    ssize_t recv_len = recvfrom(udp_sock.sock, recv_buffer, sizeof(recv_buffer) - 1, 0,
-                                (struct sockaddr *) &udp_sock.recv_addr, &src_addr_len);
-    if (recv_len < 0) {
-        std::cerr << "[solve_EXPSTN] Error: recvfrom failed. (" << strerror(errno) << ")" << std::endl;
-        return false;
-    }
-
-    // Ensuring the received data is null-terminated
-    recv_buffer[recv_len] = '\0';
-
-    // Logging the received response from the oracle
-    std::cout << "[solve_EXPSTN] Received from Oracle Port " << oracle_port << ": " << recv_buffer << std::endl;
-
-    // Parsing the received list of ports (assuming they are comma-separated)
-    int sum = 0;
-    int count = 0;
-    int ports_to_knock[10] = {0}; // Adjust size as needed based on expected number of ports
-
-    for (int i = 0; i < recv_len; ++i) {
-        if (recv_buffer[i] != ',') {
-            // Assuming ports can have multiple digits
-            if (recv_buffer[i] >= '0' && recv_buffer[i] <= '9') {
-                int num = recv_buffer[i] - '0';
-                sum = sum * 10 + num;
-            } else {
-                std::cerr << "[solve_EXPSTN] Warning: Invalid character in port list: " << recv_buffer[i] << std::endl;
-            }
-        } else {
-            if (count < 10) { // Prevent array overflow
-                ports_to_knock[count++] = sum;
-                sum = 0;
-            } else {
-                std::cerr << "[solve_EXPSTN] Warning: Too many ports received. Consider increasing ports_to_knock size." << std::endl;
-                break;
-            }
-        }
-    }
-    if (count < 10) { // Add the last port if there is no trailing comma
-        ports_to_knock[count++] = sum;
-    }
-
-    // Logging the list of ports to knock on
-    std::cout << "\t\tPorts to Knock On: ";
-    for (int i = 0; i < count; ++i) {
-        std::cout << ports_to_knock[i];
-        if (i < count - 1) std::cout << ", ";
-    }
-    std::cout << std::endl << std::endl;
-
-    // Knocking on each port by sending the secret_phrase with signature and logging the response
-    std::cout << "\t\tKnocking on ports..." << std::endl << std::endl;
-    for (int port_index = 0; port_index < count; ++port_index) {
-        uint16_t current_port = ports_to_knock[port_index];
-        udp_sock.set_port(current_port);
-
-        // Setting the message to always be secret_phrase
-        const char* message = secret_phrase;
-        size_t message_len = strlen(message);
-
-        // Prepending the signature to the message
-        // Convert the signature to network byte order
-        uint32_t net_signature = htonl(secret_signature);
-        // Creating a buffer to hold signature + message
-        // Ensuring that the buffer is large enough
+        std::cout << "Before stripping: " << secret_phrase << std::endl;
+        std::string stripped_secret_phrase = strip_quotes(secret_phrase); // Ensure quotes are stripped
+        std::cout << "After stripping: " << stripped_secret_phrase << std::endl;        
+        size_t message_len = stripped_secret_phrase.length();
+        uint32_t net_signature = (signature);
         size_t buffer_size = 4 + message_len;
         char* send_buffer_message = new char[buffer_size];
+
+        // Copy the signature (4 bytes) and secret phrase into the send buffer
         memcpy(send_buffer_message, &net_signature, sizeof(net_signature));
-        memcpy(send_buffer_message + 4, message, message_len);
+        memcpy(send_buffer_message + sizeof(net_signature), stripped_secret_phrase.c_str(), message_len);
 
-        // Sending the secret_phrase with signature to the current port
-        ssize_t knock_sent_len = sendto(udp_sock.sock, send_buffer_message, buffer_size, 0,
-                                        (struct sockaddr *) &udp_sock.dest_addr, sizeof(udp_sock.dest_addr));
-        delete[] send_buffer_message; // Freeing the allocated buffer
 
+        // Print the message in hex before sending
+        cout << "Message contents (hex): ";
+        for (size_t i = 0; i < buffer_size; ++i) {
+            printf("%02X ", (unsigned char)send_buffer_message[i]);
+        }
+        cout << endl;
+
+
+
+        // Send the message
+        ssize_t knock_sent_len = udp_sock.send_data(send_buffer_message, buffer_size);
         if (knock_sent_len < 0) {
-            std::cerr << "[solve_EXPSTN] Error: sendto failed on port " << current_port << ". (" << strerror(errno) << ")" << std::endl;
-            continue; // Proceeding to the next port
+            cerr << "[perform_port_knocking] Error sending to port " << current_port << endl;
+            delete[] send_buffer_message;  // Free allocated memory
+            continue;
         }
-        std::cout << "[solve_EXPSTN] Sent to Port " << current_port << std::endl;
 
-        // Receiving the response from the current port
-        memset(recv_buffer, 0, sizeof(recv_buffer));
-        ssize_t knock_recv_len = recvfrom(udp_sock.sock, recv_buffer, sizeof(recv_buffer) - 1, 0,
-                                            (struct sockaddr *) &udp_sock.recv_addr, &src_addr_len);
+        // Receive response
+        memset(buffer, 0, sizeof(buffer));
+        ssize_t knock_recv_len = udp_sock.receive_data(buffer, sizeof(buffer) - 1);
+
         if (knock_recv_len < 0) {
-            std::cerr << "[solve_EXPSTN] Error: recvfrom failed on port " << current_port << ". (" << strerror(errno) << ")" << std::endl;
-            continue; // Proceeding to the next port
+            perror("[perform_port_knocking] Error receiving from port");
+            delete[] send_buffer_message;  // Free allocated memory
+            continue;
         }
 
-        // Ensuring the received data is null-terminated
-        recv_buffer[knock_recv_len] = '\0';
+        // Null-terminate the received data
+        buffer[knock_recv_len] = '\0';
+        cout << "[perform_port_knocking] Received from Port " << current_port << ": " << buffer << endl;
 
-        // Logging the response from the current port
-        std::cout << "[solve_EXPSTN] Received from Port " << current_port << ": " << recv_buffer << std::endl;
+        // Clean up
+        delete[] send_buffer_message;  // Free allocated memory
     }
 
-    // Separator for clarity in console output
-    std::cout << "----------------------------------------" << std::endl;
+    close(sock);
     return true;
-*/
+};
