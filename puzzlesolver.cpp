@@ -88,7 +88,7 @@ int main(int argc, char *argv[]) {
     int found_ports = 0;
     int tries = 0;
 
-    while (found_ports < 4 && tries < 10) {
+    while (found_ports < 4 && tries < 3) {
         for (int this_port = 2; this_port < 5; this_port++) {
             cout << "Checking port " << argv[this_port] << endl;
             size_t curr_port = port_matcher(ip_string, atoi(argv[this_port]));
